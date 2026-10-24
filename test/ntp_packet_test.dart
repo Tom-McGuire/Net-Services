@@ -42,7 +42,7 @@ void main() {
       // Byte 0: LI=0, VN=4, Mode=4 -> 0x24
       expect(response[0], equals(0x24));
       // Stratum 1 (Primary reference clock)
-      expect(response[1], equals(1));
+      expect(response[1], equals(10));
       // Reference ID: "LOCL" -> [0x4C, 0x4F, 0x43, 0x4C]
       expect(response.sublist(12, 16), equals([0x4C, 0x4F, 0x43, 0x4C]));
 

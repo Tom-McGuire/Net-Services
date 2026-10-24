@@ -31,8 +31,9 @@ class NetworkServicesViewModel extends ChangeNotifier {
   ServiceLogRecord? _selectedLog;
   String _logFilter = 'ALL';
   String _searchQuery = '';
-  DateTime _currentTime = DateTime.now();
-  Timer? _clockTimer;
+
+  // M2: Cache filtered logs to prevent re-filtering 4+ times per frame
+  List<ServiceLogRecord>? _cachedFilteredLogs;
 
   StreamSubscription? _logSub;
   StreamSubscription? _dnsSub;
@@ -42,14 +43,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   NetworkServicesViewModel({NetworkServicesRepository? repository})
       : _repository = repository ?? NetworkServicesRepository() {
-    _dhcpConfig = const DhcpConfig(
-      startIp: '192.168.1.100',
-      poolSize: 20,
-      subnetMask: '255.255.255.0',
-      gatewayIp: '192.168.1.1',
-      dnsServerIp: '192.168.1.1',
-    );
-
+    _dhcpConfig = DhcpConfig.defaultConfig;
     _init();
   }
 
@@ -73,7 +67,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   ServiceLogRecord? get selectedLog => _selectedLog;
   String get logFilter => _logFilter;
   String get searchQuery => _searchQuery;
-  DateTime get currentTime => _currentTime;
+  DateTime get currentTime => DateTime.now();
 
   bool get isAnyServiceRunning =>
       dnsStatus.isRunning || ntpStatus.isRunning || dhcpStatus.isRunning;
@@ -86,7 +80,9 @@ class NetworkServicesViewModel extends ChangeNotifier {
   }
 
   List<ServiceLogRecord> get filteredLogs {
-    return _repository.logs.where((log) {
+    if (_cachedFilteredLogs != null) return _cachedFilteredLogs!;
+
+    final result = _repository.logs.where((log) {
       if (_logFilter != 'ALL') {
         if (log.serviceName != _logFilter) return false;
       }
@@ -99,26 +95,30 @@ class NetworkServicesViewModel extends ChangeNotifier {
       }
       return true;
     }).toList();
+
+    _cachedFilteredLogs = result;
+    return result;
+  }
+
+  void _invalidateLogCache() {
+    _cachedFilteredLogs = null;
   }
 
   Future<void> _init() async {
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _currentTime = DateTime.now();
-      notifyListeners();
-    });
-
     _hasElevatedPrivileges = await _repository.checkPrivileges();
     _interfaces = await _repository.getInterfaces();
 
     if (_interfaces.isNotEmpty) {
-      // Pick first non-loopback
       _selectedInterface = _interfaces.first;
       _applyInterfaceToDhcpDefaults(_selectedInterface!);
     }
 
     _repository.setDnsRecords(_dnsRecords);
 
-    _logSub = _repository.logsStream.listen((_) => notifyListeners());
+    _logSub = _repository.logsStream.listen((_) {
+      _invalidateLogCache();
+      notifyListeners();
+    });
     _dnsSub = _repository.dnsStatusStream.listen((_) => notifyListeners());
     _ntpSub = _repository.ntpStatusStream.listen((_) => notifyListeners());
     _dhcpSub = _repository.dhcpStatusStream.listen((_) => notifyListeners());
@@ -146,18 +146,24 @@ class NetworkServicesViewModel extends ChangeNotifier {
   }
 
   void setDnsPort(int port) {
-    _dnsPort = port;
-    notifyListeners();
+    if (port >= 1 && port <= 65535) {
+      _dnsPort = port;
+      notifyListeners();
+    }
   }
 
   void setNtpPort(int port) {
-    _ntpPort = port;
-    notifyListeners();
+    if (port >= 1 && port <= 65535) {
+      _ntpPort = port;
+      notifyListeners();
+    }
   }
 
   void setDhcpPort(int port) {
-    _dhcpPort = port;
-    notifyListeners();
+    if (port >= 1 && port <= 65535) {
+      _dhcpPort = port;
+      notifyListeners();
+    }
   }
 
   void updateDhcpConfig(DhcpConfig config) {
@@ -197,8 +203,16 @@ class NetworkServicesViewModel extends ChangeNotifier {
     if (dhcpStatus.isRunning) {
       await _repository.stopDhcp();
     } else {
-      // DHCP must listen on 0.0.0.0 to catch broadcasts
-      await _repository.startDhcp(port: _dhcpPort, bindAddress: InternetAddress.anyIPv4);
+      InternetAddress? addr;
+      if (_selectedInterface != null) {
+        addr = InternetAddress.tryParse(_selectedInterface!.ip);
+      }
+      // H1: Bind consistently with startAll and provide serverIp
+      await _repository.startDhcp(
+        port: _dhcpPort,
+        bindAddress: addr ?? InternetAddress.anyIPv4,
+        serverIp: _selectedInterface?.ip,
+      );
     }
     notifyListeners();
   }
@@ -212,7 +226,8 @@ class NetworkServicesViewModel extends ChangeNotifier {
       dnsPort: _dnsPort,
       ntpPort: _ntpPort,
       dhcpPort: _dhcpPort,
-      bindAddress: addr,
+      bindAddress: addr ?? InternetAddress.anyIPv4,
+      serverIp: _selectedInterface?.ip,
     );
     notifyListeners();
   }
@@ -250,17 +265,20 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   void setLogFilter(String filter) {
     _logFilter = filter;
+    _invalidateLogCache();
     notifyListeners();
   }
 
   void setSearchQuery(String query) {
     _searchQuery = query;
+    _invalidateLogCache();
     notifyListeners();
   }
 
   void clearLogs() {
     _repository.clearLogs();
     _selectedLog = null;
+    _invalidateLogCache();
     notifyListeners();
   }
 
@@ -280,7 +298,6 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
-    _clockTimer?.cancel();
     _logSub?.cancel();
     _dnsSub?.cancel();
     _ntpSub?.cancel();

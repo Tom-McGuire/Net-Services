@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -14,16 +15,28 @@ class NtpServicePanel extends StatefulWidget {
 
 class _NtpServicePanelState extends State<NtpServicePanel> {
   late TextEditingController _portController;
+  Timer? _clockTimer;
+  DateTime _currentTime = DateTime.now();
 
   @override
   void initState() {
     super.initState();
     final vm = context.read<NetworkServicesViewModel>();
     _portController = TextEditingController(text: vm.ntpPort.toString());
+
+    // M2: Local timer updates clock locally without rebuilding the entire application
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _currentTime = DateTime.now();
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _clockTimer?.cancel();
     _portController.dispose();
     super.dispose();
   }
@@ -32,8 +45,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
   Widget build(BuildContext context) {
     final vm = context.watch<NetworkServicesViewModel>();
     final isRunning = vm.ntpStatus.isRunning;
-    final currentTime = vm.currentTime;
-    final utcTime = currentTime.toUtc();
+    final utcTime = _currentTime.toUtc();
     final ntpEpochSeconds = (utcTime.millisecondsSinceEpoch ~/ 1000) + 2208988800;
 
     final ntpLogs = vm.filteredLogs.where((l) => l.serviceName == 'NTP').toList();
@@ -77,49 +89,60 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
         ),
         const Divider(),
 
-        // Live Clock Hero Card
+        // Digital Clock Hero Banner
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // Digital Clock
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'HOST MACHINE LOCAL TIME',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                      ),
+              // Local Clock Display
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Local System Time', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('HH:mm:ss').format(_currentTime),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      DateFormat('HH:mm:ss').format(currentTime),
-                      style: TextStyle(
-                        fontSize: 42,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${DateFormat('EEEE, MMMM d, yyyy').format(currentTime)} (${currentTime.timeZoneName})',
-                      style: const TextStyle(fontSize: 13, color: Colors.white70),
-                    ),
-                  ],
-                ),
+                  ),
+                  Text(
+                    DateFormat('EEEE, MMMM d, y').format(_currentTime),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
               ),
 
-              // Diagnostics & Epoch
+              // UTC & Epoch Display
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('UTC Clock Reference', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('HH:mm:ss').format(utcTime),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                  Text(
+                    'Timezone: ${_currentTime.timeZoneName} (UTC${_currentTime.timeZoneOffset.isNegative ? "" : "+"}${_currentTime.timeZoneOffset.inHours})',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ],
+              ),
+
+              // NTP Metadata & Stratum
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
@@ -128,13 +151,13 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _diagRow('Stratum', '1 (LOCL Primary Reference Clock)'),
-                    const SizedBox(height: 6),
-                    _diagRow('UTC Time', DateFormat('yyyy-MM-dd HH:mm:ss').format(utcTime)),
-                    const SizedBox(height: 6),
-                    _diagRow('NTP Epoch', '$ntpEpochSeconds sec'),
-                    const SizedBox(height: 6),
-                    _diagRow('Protocol', 'RFC 5905 UDP / Mode 4 Server'),
+                    _diagRow('Stratum', '10 (Local Reference Clock)'),
+                    const SizedBox(height: 4),
+                    _diagRow('Precision', '~1 microsecond'),
+                    const SizedBox(height: 4),
+                    _diagRow('Ref ID', 'LOCL'),
+                    const SizedBox(height: 4),
+                    _diagRow('NTP Epoch', '$ntpEpochSeconds s'),
                   ],
                 ),
               ),
@@ -143,48 +166,58 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
         ),
         const Divider(),
 
-        // Sync Audit Log Header
-        Container(
+        // Time Synchronization Audit Log Header
+        Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Theme.of(context).colorScheme.surfaceContainer,
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.history, size: 16, color: Colors.grey),
-              const SizedBox(width: 8),
-              Text(
-                'Recent Time Sync Requests (${ntpLogs.length})',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  const Text(
+                    'Time Synchronization Requests',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${ntpLogs.length} syncs',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
 
-        // Sync Requests List
+        // NTP Sync List
         Expanded(
           child: ntpLogs.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.timer_outlined, size: 40, color: Colors.grey.shade700),
-                      const SizedBox(height: 8),
-                      Text(
-                        isRunning
-                            ? 'NTP server listening on port ${vm.ntpPort}. Ready to serve time requests.'
-                            : 'Start the NTP server to serve local time to client devices.',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
+              ? const Center(
+                  child: Text(
+                    'No client time synchronization requests received yet.',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                 )
               : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: ntpLogs.length,
-                  separatorBuilder: (_, _) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final log = ntpLogs[index];
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, idx) {
+                    final log = ntpLogs[idx];
                     return ListTile(
                       dense: true,
-                      leading: const Icon(Icons.sync, size: 18, color: Colors.tealAccent),
+                      leading: const Icon(Icons.sync, size: 20, color: Colors.blueAccent),
                       title: Text(
                         log.summary,
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),

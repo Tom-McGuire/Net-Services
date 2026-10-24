@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:net_services/domain/models/dns_record.dart';
@@ -40,6 +41,21 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
     if (domain.isEmpty || ip.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter both domain name and target IP address')),
+      );
+      return;
+    }
+
+    final parsedIp = InternetAddress.tryParse(ip);
+    if (parsedIp == null || parsedIp.type != InternetAddressType.IPv4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Target IP must be a valid IPv4 address (e.g. 192.168.1.10)')),
+      );
+      return;
+    }
+
+    if (domain != '*' && !RegExp(r'^[a-zA-Z0-9_\-\.]+$').hasMatch(domain)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Domain name contains invalid characters')),
       );
       return;
     }
@@ -94,169 +110,240 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
         ),
         const Divider(),
 
-        // Add New Mapping Row
-        Container(
-          padding: const EdgeInsets.all(12),
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          child: Row(
-            children: [
-              const Text(
-                'New Record:',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 220,
-                child: TextField(
-                  controller: _domainController,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                  decoration: const InputDecoration(
-                    hintText: 'e.g. printer.local or test.dev',
-                    labelText: 'Domain / Hostname',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 180,
-                child: TextField(
-                  controller: _ipController,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                  decoration: const InputDecoration(
-                    hintText: 'e.g. 192.168.1.50',
-                    labelText: 'Points to IP Address',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: () => _addRecord(vm),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Mapping'),
-              ),
-            ],
-          ),
-        ),
-        const Divider(),
-
-        // Records Table & Live Queries Split View
+        // Content Area: Split View (Records Config & Live Query Monitor)
         Expanded(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Configured Mappings Table
+              // Left: Configured Records Panel
               Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      color: Theme.of(context).colorScheme.surfaceContainer,
-                      child: Text(
-                        'Configured DNS Records (${vm.dnsRecords.length})',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                flex: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Static Host Records',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    Expanded(
-                      child: vm.dnsRecords.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No DNS records configured. Add one above.',
-                                style: TextStyle(color: Colors.grey, fontSize: 12),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Map domain hostnames to IP addresses. Wildcard (*) matches any unmapped request.',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Add Record Form
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _domainController,
+                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                              decoration: const InputDecoration(
+                                hintText: 'Domain (e.g. gateway.local or *)',
+                                isDense: true,
                               ),
-                            )
-                          : ListView.separated(
-                              itemCount: vm.dnsRecords.length,
-                              separatorBuilder: (_, _) => const Divider(),
-                              itemBuilder: (context, index) {
-                                final record = vm.dnsRecords[index];
-                                return ListTile(
-                                  dense: true,
-                                  leading: const Icon(Icons.link, size: 18, color: Colors.blueAccent),
-                                  title: Text(
-                                    record.domain,
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Points to: ${record.ip} • TTL: ${record.ttl}s',
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 11,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
-                                    onPressed: () => vm.removeDnsRecord(record.domain),
-                                    tooltip: 'Remove Record',
-                                  ),
-                                );
-                              },
                             ),
-                    ),
-                  ],
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _ipController,
+                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                              decoration: const InputDecoration(
+                                hintText: 'IP (e.g. 192.168.1.1)',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: () => _addRecord(vm),
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Add'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Records Table
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Theme.of(context).dividerColor),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: vm.dnsRecords.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No DNS records added yet.',
+                                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: vm.dnsRecords.length,
+                                  separatorBuilder: (_, _) => const Divider(height: 1),
+                                  itemBuilder: (context, idx) {
+                                    final record = vm.dnsRecords[idx];
+                                    final isWildcard = record.domain == '*';
+                                    return ListTile(
+                                      dense: true,
+                                      leading: Icon(
+                                        isWildcard ? Icons.stars : Icons.public,
+                                        size: 16,
+                                        color: isWildcard ? Colors.amber : Colors.blue,
+                                      ),
+                                      title: Text(
+                                        record.domain,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: isWildcard ? Colors.amber : null,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        'Type: A • TTL: ${record.ttl}s',
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              record.ip,
+                                              style: const TextStyle(
+                                                fontFamily: 'monospace',
+                                                fontSize: 12,
+                                                color: Colors.blue,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                            tooltip: 'Remove Record',
+                                            onPressed: () => vm.removeDnsRecord(record.domain),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const VerticalDivider(),
 
-              // Live DNS Queries Log
+              const VerticalDivider(width: 1),
+
+              // Right: Recent DNS Queries Log
               Expanded(
-                flex: 6,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      color: Theme.of(context).colorScheme.surfaceContainer,
-                      child: Text(
-                        'Live DNS Query Activity (${dnsLogs.length})',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                flex: 5,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Live Query Resolution Stream',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '${dnsLogs.length} events logged',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
                       ),
-                    ),
-                    Expanded(
-                      child: dnsLogs.isEmpty
-                          ? Center(
-                              child: Text(
-                                isRunning
-                                    ? 'DNS server active. Waiting for queries...'
-                                    : 'Start the DNS server to begin resolving queries.',
-                                style: const TextStyle(color: Colors.grey, fontSize: 12),
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: dnsLogs.length,
-                              separatorBuilder: (_, _) => const Divider(),
-                              itemBuilder: (context, index) {
-                                final log = dnsLogs[index];
-                                final isResolved = log.action == 'RESOLVED';
-                                return ListTile(
-                                  dense: true,
-                                  leading: Icon(
-                                    isResolved ? Icons.check_circle_outline : Icons.help_outline,
-                                    size: 16,
-                                    color: isResolved ? Colors.green : Colors.orange,
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Theme.of(context).dividerColor),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                          ),
+                          child: dnsLogs.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No DNS queries resolved yet.',
+                                    style: TextStyle(color: Colors.grey, fontSize: 12),
                                   ),
-                                  title: Text(
-                                    log.summary,
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Time: ${DateFormat("HH:mm:ss.SSS").format(log.timestamp)}',
-                                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                                  ),
-                                  onTap: () => vm.selectLog(log),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
+                                )
+                              : ListView.builder(
+                                  itemCount: dnsLogs.length,
+                                  itemBuilder: (context, idx) {
+                                    final log = dnsLogs[idx];
+                                    final isResolved = log.action == 'RESOLVED';
+                                    final timeStr = DateFormat('HH:mm:ss.SSS').format(log.timestamp);
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            timeStr,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontFamily: 'monospace',
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isResolved
+                                                  ? Colors.green.withValues(alpha: 0.15)
+                                                  : Colors.orange.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              log.action,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: isResolved ? Colors.green : Colors.orange,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              log.summary,
+                                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

@@ -8,6 +8,7 @@ class NtpServerService {
   RawDatagramSocket? _socket;
   ServiceStatus _status = const ServiceStatus(port: 123);
   int _syncCount = 0;
+  int _logSequence = 0;
 
   final _logController = StreamController<ServiceLogRecord>.broadcast();
   final _statusController = StreamController<ServiceStatus>.broadcast();
@@ -26,8 +27,8 @@ class NtpServerService {
       _socket = await RawDatagramSocket.bind(
         targetAddress,
         port,
-        reuseAddress: true,
-        reusePort: true,
+        reuseAddress: false,
+        reusePort: false,
       );
 
       _status = ServiceStatus(
@@ -39,7 +40,7 @@ class NtpServerService {
 
       _emitLog(
         action: 'START',
-        summary: 'NTP Time Server listening on ${targetAddress.address}:$port (Stratum 1 Local Clock)',
+        summary: 'NTP Time Server listening on ${targetAddress.address}:$port (Stratum 10 Local Clock)',
         severity: LogSeverity.success,
       );
 
@@ -106,13 +107,14 @@ class NtpServerService {
 
     _emitLog(
       action: 'SYNC',
-      summary: 'Served local time to ${datagram.address.address}:${datagram.port} (Sync #$_syncCount)',
+      summary: 'NTP Sync with ${datagram.address.address}:${datagram.port}',
       clientAddress: '${datagram.address.address}:${datagram.port}',
       severity: LogSeverity.info,
-      details: 'Client Address: ${datagram.address.address}:${datagram.port}\n'
-          'Local Time Served: ${transmitTime.toIso8601String()}\n'
-          'Stratum: 1 (LOCL Reference Clock)\n'
-          'Packet Size: 48 bytes',
+      details: 'Local Time: ${transmitTime.toIso8601String()}\n'
+          'Stratum: 10 (Undisciplined local reference clock)\n'
+          'Precision: ~1 microsecond\n'
+          'Reference ID: LOCL\n'
+          'Total Syncs: $_syncCount',
     );
   }
 
@@ -137,9 +139,10 @@ class NtpServerService {
     String? details,
   }) {
     if (_logController.isClosed) return;
+    final logId = '${DateTime.now().millisecondsSinceEpoch}_${++_logSequence}';
     _logController.add(
       ServiceLogRecord(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: logId,
         timestamp: DateTime.now(),
         serviceType: ServiceType.ntp,
         action: action,

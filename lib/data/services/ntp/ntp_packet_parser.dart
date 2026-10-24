@@ -27,10 +27,11 @@ class NtpPacketParser {
     // Byte 0: LI = 0, VN = 4 (or client's version), Mode = 4 (Server)
     final clientVersion = (clientData[0] >> 3) & 0x07;
     final vn = (clientVersion >= 1 && clientVersion <= 4) ? clientVersion : 4;
-    response[0] = (0 << 6) | (vn << 3) | 4; // 0x24 for VN=4
+    response[0] = (0 << 6) | (vn << 3) | 4; // Mode 4
 
-    // Byte 1: Stratum 1 (Primary reference clock / local system clock)
-    response[1] = 1;
+    // Byte 1: Stratum 10 (Undisciplined local clock without upstream reference per RFC 5905)
+    // Avoids claiming Stratum 1 which would falsely override upstream NTP servers
+    response[1] = 10;
 
     // Byte 2: Poll interval (echo client poll or 4)
     response[2] = clientData[2] > 0 ? clientData[2] : 4;
@@ -72,7 +73,8 @@ class NtpPacketParser {
     // Map 0..999,999 to 0..2^32-1
     final fraction = ((micros * 4294967296) ~/ 1000000) & 0xFFFFFFFF;
 
-    byteData.setUint32(offset, seconds);
+    // M3: 32-bit mask to prevent overflow after NTP rollover
+    byteData.setUint32(offset, seconds & 0xFFFFFFFF);
     byteData.setUint32(offset + 4, fraction);
   }
 }

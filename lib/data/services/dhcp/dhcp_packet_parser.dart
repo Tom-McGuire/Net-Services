@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 enum DhcpMessageType {
@@ -33,6 +34,7 @@ class DhcpPacket {
   final Uint8List rawChaddr;
   final DhcpMessageType messageType;
   final String? requestedIp;
+  final String? serverIdentifier;
   final String? hostname;
   final Map<int, Uint8List> options;
 
@@ -47,6 +49,7 @@ class DhcpPacket {
     required this.rawChaddr,
     required this.messageType,
     this.requestedIp,
+    this.serverIdentifier,
     this.hostname,
     required this.options,
   });
@@ -59,6 +62,10 @@ class DhcpPacketParser {
   static DhcpPacket? parse(Uint8List data) {
     if (data.length < 240) return null;
 
+    final op = data[0];
+    // Reject packets that are not BOOTREQUEST (op = 1)
+    if (op != 1 && op != 2) return null;
+
     // Verify magic cookie at offset 236
     if (data[236] != magicCookie[0] ||
         data[237] != magicCookie[1] ||
@@ -68,7 +75,6 @@ class DhcpPacketParser {
     }
 
     final byteData = ByteData.sublistView(data);
-    final op = data[0];
     final hlen = data[2];
     final xid = byteData.getUint32(4);
     final flags = byteData.getUint16(10);
@@ -88,6 +94,7 @@ class DhcpPacketParser {
     int offset = 240;
     DhcpMessageType messageType = DhcpMessageType.unknown;
     String? requestedIp;
+    String? serverIdentifier;
     String? hostname;
 
     while (offset < data.length) {
@@ -109,8 +116,10 @@ class DhcpPacketParser {
         messageType = DhcpMessageType.fromValue(optData[0]);
       } else if (code == 50 && len == 4) {
         requestedIp = _formatIp(optData, 0);
+      } else if (code == 54 && len == 4) {
+        serverIdentifier = _formatIp(optData, 0);
       } else if (code == 12 && len > 0) {
-        hostname = String.fromCharCodes(optData);
+        hostname = _sanitizeHostname(String.fromCharCodes(optData));
       }
 
       offset += len;
@@ -127,12 +136,22 @@ class DhcpPacketParser {
       rawChaddr: rawChaddr,
       messageType: messageType,
       requestedIp: requestedIp,
+      serverIdentifier: serverIdentifier,
       hostname: hostname,
       options: options,
     );
   }
 
-  /// Builds a DHCP response packet (DHCPOFFER or DHCPACK)
+  static String _sanitizeHostname(String raw) {
+    // Only allow alphanumerics, dots, hyphens, underscores; max 63 chars
+    final cleaned = raw.replaceAll(RegExp(r'[^a-zA-Z0-9.\-_]'), '').trim();
+    if (cleaned.length > 63) {
+      return cleaned.substring(0, 63);
+    }
+    return cleaned;
+  }
+
+  /// Builds a DHCP response packet (DHCPOFFER, DHCPACK, or DHCPNAK)
   static Uint8List buildReply({
     required DhcpPacket request,
     required DhcpMessageType replyType,
@@ -142,6 +161,7 @@ class DhcpPacketParser {
     required String routerIp,
     required String dnsServerIp,
     required int leaseTimeSeconds,
+    String? errorMessage,
   }) {
     final builder = BytesBuilder();
 
@@ -167,11 +187,19 @@ class DhcpPacketParser {
       request.flags & 0xFF,
     ]);
 
-    // 12..15: ciaddr (0.0.0.0 for offer, or client IP)
-    builder.add(_ipToBytes(request.ciaddr == '0.0.0.0' ? '0.0.0.0' : request.ciaddr));
+    // 12..15: ciaddr (0.0.0.0 for offer/nak, or client IP for ack when unicast)
+    if (replyType == DhcpMessageType.nak || replyType == DhcpMessageType.offer) {
+      builder.add([0x00, 0x00, 0x00, 0x00]);
+    } else {
+      builder.add(_ipToBytes(request.ciaddr == '0.0.0.0' ? '0.0.0.0' : request.ciaddr));
+    }
 
-    // 16..19: yiaddr ('Your' offered/assigned IP address)
-    builder.add(_ipToBytes(offeredIp));
+    // 16..19: yiaddr ('Your' offered/assigned IP address; 0.0.0.0 on NAK)
+    if (replyType == DhcpMessageType.nak) {
+      builder.add([0x00, 0x00, 0x00, 0x00]);
+    } else {
+      builder.add(_ipToBytes(offeredIp));
+    }
 
     // 20..23: siaddr (Next server IP address)
     builder.add(_ipToBytes(serverIp));
@@ -192,24 +220,33 @@ class DhcpPacketParser {
     builder.add(magicCookie);
 
     // Options:
-    // Option 53: DHCP Message Type (OFFER = 2, ACK = 5)
+    // Option 53: DHCP Message Type
     builder.add([53, 1, replyType.value]);
 
-    // Option 54: Server Identifier
+    // Option 54: Server Identifier (Our server's IP address)
     builder.add([54, 4, ..._ipToBytes(serverIp)]);
 
-    // Option 51: Lease Time (32-bit seconds)
-    final leaseBytes = Uint8List(4)..buffer.asByteData().setUint32(0, leaseTimeSeconds);
-    builder.add([51, 4, ...leaseBytes]);
+    if (replyType == DhcpMessageType.nak) {
+      // Option 56: Message (optional error explanation)
+      if (errorMessage != null && errorMessage.isNotEmpty) {
+        final msgBytes = utf8.encode(errorMessage);
+        final len = msgBytes.length > 255 ? 255 : msgBytes.length;
+        builder.add([56, len, ...msgBytes.take(len)]);
+      }
+    } else {
+      // Option 51: Lease Time (32-bit seconds)
+      final leaseBytes = Uint8List(4)..buffer.asByteData().setUint32(0, leaseTimeSeconds);
+      builder.add([51, 4, ...leaseBytes]);
 
-    // Option 1: Subnet Mask
-    builder.add([1, 4, ..._ipToBytes(subnetMask)]);
+      // Option 1: Subnet Mask
+      builder.add([1, 4, ..._ipToBytes(subnetMask)]);
 
-    // Option 3: Router / Default Gateway
-    builder.add([3, 4, ..._ipToBytes(routerIp)]);
+      // Option 3: Router / Default Gateway
+      builder.add([3, 4, ..._ipToBytes(routerIp)]);
 
-    // Option 6: Domain Name Server
-    builder.add([6, 4, ..._ipToBytes(dnsServerIp)]);
+      // Option 6: Domain Name Server
+      builder.add([6, 4, ..._ipToBytes(dnsServerIp)]);
+    }
 
     // Option 255: End marker
     builder.addByte(255);

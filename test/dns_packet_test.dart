@@ -8,7 +8,7 @@ void main() {
       final builder = BytesBuilder();
       // ID: 0x1234
       builder.add([0x12, 0x34]);
-      // Flags: Standard query (0x0100)
+      // Flags: Standard query with RD=1 (0x0100)
       builder.add([0x01, 0x00]);
       // QDCOUNT: 1
       builder.add([0x00, 0x01]);
@@ -27,9 +27,10 @@ void main() {
       expect(query.qClass, equals(1));
     });
 
-    test('Builds valid A record response', () {
+    test('Builds valid A record response with AA and echoed RD', () {
       final query = DnsQuery(
         transactionId: 0xABCD,
+        flags: 0x0100, // RD = 1
         domain: 'router.local',
         qType: 1,
         qClass: 1,
@@ -41,14 +42,15 @@ void main() {
       final responseBytes = DnsPacketParser.buildResponse(
         query: query,
         resolvedIp: '192.168.1.1',
+        isDomainKnown: true,
         ttl: 300,
       );
 
       final byteData = ByteData.sublistView(responseBytes);
       // Verify Transaction ID
       expect(byteData.getUint16(0), equals(0xABCD));
-      // Verify Flags: 0x8180 (Response, No Error)
-      expect(byteData.getUint16(2), equals(0x8180));
+      // Verify Flags: 0x8500 (Response, Authoritative, Recursion Desired echoed, No Error)
+      expect(byteData.getUint16(2), equals(0x8500));
       // QDCOUNT: 1, ANCOUNT: 1
       expect(byteData.getUint16(4), equals(1));
       expect(byteData.getUint16(6), equals(1));
@@ -61,6 +63,7 @@ void main() {
     test('Builds NXDOMAIN response when record not found', () {
       final query = DnsQuery(
         transactionId: 0x9999,
+        flags: 0x0000,
         domain: 'unknown.box',
         qType: 1,
         qClass: 1,
@@ -72,14 +75,26 @@ void main() {
       final responseBytes = DnsPacketParser.buildResponse(
         query: query,
         resolvedIp: null,
+        isDomainKnown: false,
       );
 
       final byteData = ByteData.sublistView(responseBytes);
       expect(byteData.getUint16(0), equals(0x9999));
-      // Flags: 0x8183 (NXDOMAIN)
-      expect(byteData.getUint16(2), equals(0x8183));
+      // Flags: 0x8403 (Response, Authoritative, NXDOMAIN)
+      expect(byteData.getUint16(2), equals(0x8403));
       // ANCOUNT: 0
       expect(byteData.getUint16(6), equals(0));
+    });
+
+    test('Rejects DNS response packets (QR=1) to prevent reflection loops', () {
+      final responsePacket = Uint8List(20);
+      responsePacket[0] = 0x12;
+      responsePacket[1] = 0x34;
+      // Flags with QR=1 (0x8000)
+      responsePacket[2] = 0x80;
+      responsePacket[3] = 0x00;
+
+      expect(DnsPacketParser.parseQuery(responsePacket), isNull);
     });
   });
 }

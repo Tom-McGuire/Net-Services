@@ -28,7 +28,7 @@ Designed for network engineers, embedded/IoT developers, system administrators, 
 
 ### ⏰ Network Time / NTP Server (RFC 5905)
 - **Local Time Source**: Serves the host machine's local clock directly to clients.
-- **RFC 5905 Compliance**: 48-byte Mode 4 server replies for client Mode 3 requests with Stratum 1 reference ID (`LOCL`).
+- **RFC 5905 Compliance**: 48-byte Mode 4 server replies for client Mode 3 requests with Stratum 10 reference ID (`LOCL`).
 - **Live Digital Clock Hero**:
   - High-precision display of Local Time, UTC Time, Timezone, and NTP Epoch seconds (since January 1, 1900).
 - **Time Sync Audit Log**: Real-time log of client sync requests with IP, port, and response timestamps.
@@ -88,7 +88,7 @@ Binding standard ports (**53**, **67**, **123**) requires elevated privileges on
    ```
 2. **Option B (Linux capability without root)**:
    ```bash
-   sudo setcap 'cap_net_bind_service=+ep' build/linux/x64/debug/bundle/net_services
+   sudo setcap 'cap_net_bind_service=+ep' build/linux/x64/release/bundle/net_services
    ```
 3. **Option C (Unprivileged testing)**:
    Use the built-in preset dropdown in each service to select unprivileged test ports:

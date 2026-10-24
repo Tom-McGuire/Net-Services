@@ -9,10 +9,10 @@ void main() {
       final repository = NetworkServicesRepository();
       final vm = NetworkServicesViewModel(repository: repository);
 
-      // Start all on unprivileged test ports
-      await repository.startDns(port: 5353);
-      await repository.startNtp(port: 1123);
-      await repository.startDhcp(port: 6767);
+      // Start all on unprivileged non-conflicting test ports (avoiding 5353 mDNS conflict)
+      await repository.startDns(port: 15353);
+      await repository.startNtp(port: 11123);
+      await repository.startDhcp(port: 16767);
 
       expect(repository.dnsStatus.isRunning, isTrue);
       expect(repository.ntpStatus.isRunning, isTrue);

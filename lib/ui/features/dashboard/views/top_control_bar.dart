@@ -6,6 +6,45 @@ import '../view_models/network_services_view_model.dart';
 class TopControlBar extends StatelessWidget {
   const TopControlBar({super.key});
 
+  Future<void> _handleStartAll(BuildContext context, NetworkServicesViewModel vm) async {
+    final iface = vm.selectedInterface?.name ?? 'Default';
+    final ip = vm.selectedInterface?.ip ?? '0.0.0.0';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.amber),
+            SizedBox(width: 8),
+            Text('Start All Services Confirmation'),
+          ],
+        ),
+        content: Text(
+          'Starting all services will activate DNS, NTP, and DHCP on interface "$iface" ($ip).\n\n'
+          'DHCP servers must only be run on isolated or test networks. '
+          'Running DHCP on an existing network can cause address conflicts for other devices.\n\n'
+          'Do you wish to start all services?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade800),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirm & Start All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await vm.startAll();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<NetworkServicesViewModel>();
@@ -90,8 +129,8 @@ class TopControlBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                   color: hasElevated
-                      ? Colors.green.withValues(alpha: 0.4)
-                      : Colors.orange.withValues(alpha: 0.4),
+                    ? Colors.green.withValues(alpha: 0.4)
+                    : Colors.orange.withValues(alpha: 0.4),
                 ),
               ),
               child: Row(
@@ -122,7 +161,7 @@ class TopControlBar extends StatelessWidget {
                 if (isAnyRunning) {
                   vm.stopAll();
                 } else {
-                  vm.startAll();
+                  _handleStartAll(context, vm);
                 }
               },
               style: FilledButton.styleFrom(
@@ -209,19 +248,19 @@ class TopControlBar extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear Activity Logs?'),
-        content: const Text('This will clear all captured activity records from this session.'),
+        content: const Text('Are you sure you want to clear all logged server activity?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
             onPressed: () {
-              Navigator.of(ctx).pop();
               vm.clearLogs();
+              Navigator.of(ctx).pop();
             },
-            child: const Text('Clear All'),
+            child: const Text('Clear'),
           ),
         ],
       ),

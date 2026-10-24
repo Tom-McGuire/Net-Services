@@ -56,7 +56,6 @@ class NetworkInterfaceService {
       if (result.exitCode == 0) {
         final lines = (result.stdout as String).split('\n');
         for (final line in lines) {
-          // Format e.g.: 2: enp1s0    inet 10.101.1.50/24 brd ...
           final parts = line.trim().split(RegExp(r'\s+'));
           if (parts.length >= 4) {
             final ifName = parts[1];
@@ -74,9 +73,18 @@ class NetworkInterfaceService {
     return map;
   }
 
-  /// Checks if the process has elevated root privileges
+  /// Checks if the process has elevated root/administrator privileges
   Future<bool> checkHasElevatedPrivileges() async {
-    if (Platform.isWindows) return true; // Windows handles <1024 differently
+    if (Platform.isWindows) {
+      try {
+        // 'net session' exits with 0 if running with Administrator privileges
+        final result = await Process.run('net', ['session']);
+        return result.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
     try {
       final result = await Process.run('id', ['-u']);
       if (result.exitCode == 0) {

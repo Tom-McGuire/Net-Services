@@ -80,6 +80,18 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
       leaseTimeSeconds: hours * 3600,
     );
 
+    final errors = newConfig.validate();
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid DHCP configuration:\n• ${errors.join('\n• ')}'),
+          backgroundColor: Colors.red.shade800,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     vm.updateDhcpConfig(newConfig);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -88,6 +100,50 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
         duration: Duration(seconds: 1),
       ),
     );
+  }
+
+  Future<void> _confirmAndToggleDhcp(NetworkServicesViewModel vm) async {
+    if (vm.dhcpStatus.isRunning) {
+      await vm.toggleDhcp();
+      return;
+    }
+
+    final iface = vm.selectedInterface?.name ?? 'Default';
+    final ip = vm.selectedInterface?.ip ?? '0.0.0.0';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.amber),
+            SizedBox(width: 8),
+            Text('DHCP Server Confirmation'),
+          ],
+        ),
+        content: Text(
+          'You are about to start a DHCP server on interface "$iface" ($ip).\n\n'
+          'Running a DHCP server on an existing network with another DHCP server or router '
+          'can cause IP conflicts and disconnect network clients.\n\n'
+          'Do you wish to start the DHCP server?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade800),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirm & Start DHCP'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await vm.toggleDhcp();
+    }
   }
 
   @override
@@ -125,7 +181,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
               ),
               const SizedBox(width: 16),
               FilledButton.icon(
-                onPressed: () => vm.toggleDhcp(),
+                onPressed: () => _confirmAndToggleDhcp(vm),
                 style: FilledButton.styleFrom(
                   backgroundColor: isRunning ? Colors.red.shade700 : Colors.green.shade700,
                   foregroundColor: Colors.white,
@@ -164,115 +220,97 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                 children: [
                   // Start IP
                   SizedBox(
-                    width: 160,
+                    width: 140,
                     child: TextField(
                       controller: _startIpController,
                       enabled: !isRunning,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
-                        labelText: 'First Address (Start IP)',
-                        helperText: 'Default: Host IP + 1',
-                        helperStyle: TextStyle(fontSize: 10),
+                        labelText: 'Start IP',
+                        isDense: true,
                       ),
-                      onChanged: (_) => setState(() {}),
                     ),
                   ),
-
-                  // Range Size
+                  // Pool Size
                   SizedBox(
-                    width: 110,
+                    width: 90,
                     child: TextField(
                       controller: _poolSizeController,
                       enabled: !isRunning,
                       keyboardType: TextInputType.number,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
-                        labelText: 'Range Size',
-                        helperText: '# of addresses',
-                        helperStyle: TextStyle(fontSize: 10),
+                        labelText: 'Pool Size',
+                        isDense: true,
                       ),
-                      onChanged: (_) => setState(() {}),
                     ),
                   ),
-
-                  // Auto-Calculated End Address Chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'Calculated Last Address:',
-                          style: TextStyle(fontSize: 10, color: Colors.grey),
+                  // Calculated End IP display badge
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('End IP:', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Theme.of(context).dividerColor),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
+                        child: Text(
                           config.endIp,
-                          style: TextStyle(
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
                   // Subnet Mask
                   SizedBox(
-                    width: 150,
+                    width: 140,
                     child: TextField(
                       controller: _subnetMaskController,
                       enabled: !isRunning,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
                         labelText: 'Subnet Mask',
-                        helperText: 'Auto-detected',
-                        helperStyle: TextStyle(fontSize: 10),
+                        isDense: true,
                       ),
                     ),
                   ),
-
-                  // Default Gateway
+                  // Gateway IP
                   SizedBox(
-                    width: 150,
+                    width: 140,
                     child: TextField(
                       controller: _gatewayController,
                       enabled: !isRunning,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
-                        labelText: 'Default Gateway (Router)',
-                        helperText: 'Host IP',
-                        helperStyle: TextStyle(fontSize: 10),
+                        labelText: 'Default Gateway',
+                        isDense: true,
                       ),
                     ),
                   ),
-
-                  // DNS Server
+                  // DNS IP
                   SizedBox(
-                    width: 150,
+                    width: 140,
                     child: TextField(
                       controller: _dnsController,
                       enabled: !isRunning,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
                         labelText: 'DNS Server',
-                        helperText: 'Host IP or 8.8.8.8',
-                        helperStyle: TextStyle(fontSize: 10),
+                        isDense: true,
                       ),
                     ),
                   ),
-
                   // Lease Duration
                   SizedBox(
-                    width: 110,
+                    width: 100,
                     child: TextField(
                       controller: _leaseHoursController,
                       enabled: !isRunning,
@@ -280,19 +318,19 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
                         labelText: 'Lease (Hours)',
-                        helperText: 'e.g. 24',
-                        helperStyle: TextStyle(fontSize: 10),
+                        isDense: true,
                       ),
                     ),
                   ),
-
-                  // Apply button
-                  if (!isRunning)
-                    ElevatedButton.icon(
-                      onPressed: () => _applyConfig(vm),
-                      icon: const Icon(Icons.check, size: 16),
-                      label: const Text('Apply Changes'),
+                  // Apply Button
+                  FilledButton.icon(
+                    onPressed: isRunning ? null : () => _applyConfig(vm),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Apply Changes'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
+                  ),
                 ],
               ),
             ],
@@ -301,51 +339,62 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
         const Divider(),
 
         // Active Leases Table Header
-        Container(
+        Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Theme.of(context).colorScheme.surfaceContainer,
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.devices, size: 16, color: Colors.grey),
-              const SizedBox(width: 8),
-              Text(
-                'Active DHCP Leases (${vm.dhcpLeases.length})',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  const Text(
+                    'Active Assigned Leases',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${vm.dhcpLeases.length} / ${config.poolSize}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              if (vm.dhcpLeases.isNotEmpty)
-                TextButton.icon(
-                  onPressed: () => vm.clearDhcpLeases(),
-                  icon: const Icon(Icons.clear_all, size: 14),
-                  label: const Text('Clear Leases', style: TextStyle(fontSize: 11)),
+              OutlinedButton.icon(
+                onPressed: vm.dhcpLeases.isEmpty ? null : () => vm.clearDhcpLeases(),
+                icon: const Icon(Icons.clear_all, size: 16),
+                label: const Text('Release All Leases'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
+              ),
             ],
           ),
         ),
 
-        // Leases Table
+        // Leases List
         Expanded(
           child: vm.dhcpLeases.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.lan_outlined, size: 40, color: Colors.grey.shade700),
-                      const SizedBox(height: 8),
-                      Text(
-                        isRunning
-                            ? 'DHCP server running. Waiting for client discovery requests...'
-                            : 'Start the DHCP server to begin leasing addresses.',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
+              ? const Center(
+                  child: Text(
+                    'No active DHCP leases assigned yet.',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                 )
               : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: vm.dhcpLeases.length,
-                  separatorBuilder: (_, _) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final lease = vm.dhcpLeases[index];
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, idx) {
+                    final lease = vm.dhcpLeases[idx];
                     return ListTile(
                       dense: true,
                       leading: const Icon(Icons.laptop_chromebook, size: 20),

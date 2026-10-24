@@ -34,7 +34,7 @@ class PortInputField extends StatelessWidget {
             ),
             onChanged: (val) {
               final port = int.tryParse(val.trim());
-              if (port != null && onPortChanged != null) {
+              if (port != null && port >= 1 && port <= 65535 && onPortChanged != null) {
                 onPortChanged!(port);
               }
             },

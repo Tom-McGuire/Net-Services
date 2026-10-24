@@ -9,6 +9,7 @@ class DnsServerService {
   RawDatagramSocket? _socket;
   ServiceStatus _status = const ServiceStatus(port: 53);
   final List<DnsRecord> _records = [];
+  int _logSequence = 0;
 
   final _logController = StreamController<ServiceLogRecord>.broadcast();
   final _statusController = StreamController<ServiceStatus>.broadcast();
@@ -41,8 +42,8 @@ class DnsServerService {
       _socket = await RawDatagramSocket.bind(
         targetAddress,
         port,
-        reuseAddress: true,
-        reusePort: true,
+        reuseAddress: false,
+        reusePort: false,
       );
 
       _status = ServiceStatus(
@@ -102,32 +103,44 @@ class DnsServerService {
       if (query == null) return;
 
       final domain = query.domain.toLowerCase();
-      // Match record (case insensitive, or check wildcard)
-      final record = _records.cast<DnsRecord?>().firstWhere(
-            (r) => r?.domain.toLowerCase() == domain || (r != null && r.domain == '*'),
+
+      // L5: Exact match first, then fallback to wildcard '*'
+      DnsRecord? record = _records.cast<DnsRecord?>().firstWhere(
+            (r) => r?.domain.toLowerCase() == domain,
+            orElse: () => null,
+          );
+      record ??= _records.cast<DnsRecord?>().firstWhere(
+            (r) => r?.domain == '*',
             orElse: () => null,
           );
 
+      final isKnown = record != null;
       final resolvedIp = record?.ip;
 
       final responseBytes = DnsPacketParser.buildResponse(
         query: query,
         resolvedIp: resolvedIp,
+        isDomainKnown: isKnown,
         ttl: record?.ttl ?? 300,
       );
 
       _socket?.send(responseBytes, datagram.address, datagram.port);
 
+      final isAQuery = query.qType == 1 || query.qType == 255;
+      final action = !isKnown
+          ? 'NXDOMAIN'
+          : (isAQuery ? 'RESOLVED' : 'NODATA');
+
       _emitLog(
-        action: resolvedIp != null ? 'RESOLVED' : 'NXDOMAIN',
-        summary: 'Query "$domain" from ${datagram.address.address} -> ${resolvedIp ?? "NXDOMAIN"}',
+        action: action,
+        summary: 'Query "$domain" (Type ${query.qType}) from ${datagram.address.address} -> ${!isKnown ? "NXDOMAIN" : (isAQuery ? resolvedIp : "NODATA (NOERROR)")}',
         clientAddress: '${datagram.address.address}:${datagram.port}',
-        severity: resolvedIp != null ? LogSeverity.info : LogSeverity.warning,
+        severity: isKnown ? LogSeverity.info : LogSeverity.warning,
         details: 'Transaction ID: 0x${query.transactionId.toRadixString(16).padLeft(4, '0')}\n'
             'Domain: $domain\n'
-            'Type: ${query.qType} (A)\n'
+            'Type: ${query.qType}\n'
             'Class: ${query.qClass}\n'
-            'Answer: ${resolvedIp ?? "None (NXDOMAIN)"}',
+            'Result: ${!isKnown ? "NXDOMAIN" : (isAQuery ? resolvedIp : "NODATA (NOERROR)")}',
       );
     } catch (e) {
       _emitLog(
@@ -159,9 +172,10 @@ class DnsServerService {
     String? details,
   }) {
     if (_logController.isClosed) return;
+    final logId = '${DateTime.now().millisecondsSinceEpoch}_${++_logSequence}';
     _logController.add(
       ServiceLogRecord(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: logId,
         timestamp: DateTime.now(),
         serviceType: ServiceType.dns,
         action: action,

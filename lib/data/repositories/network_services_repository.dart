@@ -20,15 +20,13 @@ class NetworkServicesRepository {
   final List<ServiceLogRecord> _logs = [];
   final _logsController = StreamController<List<ServiceLogRecord>>.broadcast();
 
-  NetworkServicesRepository() {
+  // M2: Throttled log batching to prevent UI freeze under packet flood
+  Timer? _logBatchTimer;
+  bool _hasPendingLogUpdate = false;
+
+  NetworkServicesRepository({DhcpConfig? initialConfig}) {
     _dhcpService = DhcpServerService(
-      initialConfig: const DhcpConfig(
-        startIp: '192.168.1.100',
-        poolSize: 20,
-        subnetMask: '255.255.255.0',
-        gatewayIp: '192.168.1.1',
-        dnsServerIp: '192.168.1.1',
-      ),
+      initialConfig: initialConfig ?? DhcpConfig.defaultConfig,
     );
 
     // Pipe individual service logs into repository log list
@@ -43,7 +41,16 @@ class NetworkServicesRepository {
     if (_logs.length > 2000) {
       _logs.removeRange(2000, _logs.length);
     }
-    _logsController.add(List.unmodifiable(_logs));
+    _hasPendingLogUpdate = true;
+
+    if (_logBatchTimer == null || !_logBatchTimer!.isActive) {
+      _logBatchTimer = Timer(const Duration(milliseconds: 100), () {
+        if (_hasPendingLogUpdate && !_logsController.isClosed) {
+          _hasPendingLogUpdate = false;
+          _logsController.add(List.unmodifiable(_logs));
+        }
+      });
+    }
   }
 
   // Streams
@@ -80,8 +87,12 @@ class NetworkServicesRepository {
   Future<void> stopNtp() => _ntpService.stop();
 
   // DHCP Operations
-  Future<void> startDhcp({int port = 67, InternetAddress? bindAddress}) =>
-      _dhcpService.start(port: port, bindAddress: bindAddress);
+  Future<void> startDhcp({
+    int port = 67,
+    InternetAddress? bindAddress,
+    String? serverIp,
+  }) =>
+      _dhcpService.start(port: port, bindAddress: bindAddress, serverIp: serverIp);
   Future<void> stopDhcp() => _dhcpService.stop();
   void updateDhcpConfig(DhcpConfig config) => _dhcpService.updateConfig(config);
   void clearDhcpLeases() => _dhcpService.clearLeases();
@@ -92,10 +103,11 @@ class NetworkServicesRepository {
     int ntpPort = 123,
     int dhcpPort = 67,
     InternetAddress? bindAddress,
+    String? serverIp,
   }) async {
     await startDns(port: dnsPort, bindAddress: bindAddress);
     await startNtp(port: ntpPort, bindAddress: bindAddress);
-    await startDhcp(port: dhcpPort, bindAddress: bindAddress);
+    await startDhcp(port: dhcpPort, bindAddress: bindAddress, serverIp: serverIp);
   }
 
   Future<void> stopAll() async {
@@ -110,6 +122,7 @@ class NetworkServicesRepository {
   }
 
   void dispose() {
+    _logBatchTimer?.cancel();
     _dnsService.dispose();
     _ntpService.dispose();
     _dhcpService.dispose();
