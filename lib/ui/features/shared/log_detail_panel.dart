@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../domain/models/service_log_record.dart';
 
-class LogDetailPanel extends StatelessWidget {
+class LogDetailPanel extends StatefulWidget {
   final ServiceLogRecord record;
   final VoidCallback onClose;
 
@@ -13,21 +13,121 @@ class LogDetailPanel extends StatelessWidget {
   });
 
   @override
+  State<LogDetailPanel> createState() => _LogDetailPanelState();
+}
+
+class _LogDetailPanelState extends State<LogDetailPanel> {
+  // Remember user's preferred height across log selection switches
+  static double _persistedHeight = 260.0;
+  static double? _preMaximizedHeight;
+
+  late double _currentHeight;
+  bool _isDragging = false;
+  bool _isHoveringHandle = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentHeight = _persistedHeight;
+  }
+
+  void _toggleMaximize(double maxHeight) {
+    setState(() {
+      final isMaximized = _currentHeight >= maxHeight - 10;
+      if (isMaximized) {
+        // Restore to previous or default
+        _currentHeight = (_preMaximizedHeight ?? 260.0).clamp(120.0, maxHeight);
+      } else {
+        // Maximize
+        _preMaximizedHeight = _currentHeight;
+        _currentHeight = maxHeight;
+      }
+      _persistedHeight = _currentHeight;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final record = widget.record;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final minHeight = 120.0;
+    final maxHeight = (screenHeight * 0.75).clamp(minHeight + 50.0, 750.0);
+
+    // Ensure within valid bounds
+    if (_currentHeight < minHeight) _currentHeight = minHeight;
+    if (_currentHeight > maxHeight) _currentHeight = maxHeight;
+
+    final isMaximized = _currentHeight >= maxHeight - 10;
+
     return Container(
-      height: 220,
+      height: _currentHeight,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHigh,
         border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor),
+          top: BorderSide(
+            color: _isDragging || _isHoveringHandle
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).dividerColor,
+            width: _isDragging ? 2.0 : 1.0,
+          ),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Drag Handle bar at top
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeRow,
+            onEnter: (_) => setState(() => _isHoveringHandle = true),
+            onExit: (_) => setState(() => _isHoveringHandle = false),
+            child: GestureDetector(
+              key: const Key('log_detail_resize_handle'),
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: (_) => setState(() => _isDragging = true),
+              onVerticalDragEnd: (_) => setState(() => _isDragging = false),
+              onVerticalDragCancel: () => setState(() => _isDragging = false),
+              onVerticalDragUpdate: (details) {
+                setState(() {
+                  // Dragging UP (negative dy) increases height; dragging DOWN (positive dy) decreases height
+                  final newHeight = (_currentHeight - details.delta.dy).clamp(minHeight, maxHeight);
+                  _currentHeight = newHeight;
+                  _persistedHeight = newHeight;
+                });
+              },
+              onDoubleTap: () => _toggleMaximize(maxHeight),
+              child: Container(
+                height: 12,
+                color: _isDragging
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                    : (_isHoveringHandle
+                        ? Theme.of(context).colorScheme.surfaceContainerHighest
+                        : Colors.transparent),
+                child: Center(
+                  child: Container(
+                    width: 48,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: _isDragging || _isHoveringHandle
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.shade600,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           // Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Row(
               children: [
@@ -41,10 +141,26 @@ class LogDetailPanel extends StatelessWidget {
                   'Event Inspector: ${record.serviceName} - ${record.action}',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
+                const SizedBox(width: 8),
+                Text(
+                  '(${_currentHeight.round()}px)',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
                 const Spacer(),
+                // Maximize / Restore button
+                IconButton(
+                  icon: Icon(
+                    isMaximized ? Icons.unfold_less : Icons.unfold_more,
+                    size: 16,
+                  ),
+                  tooltip: isMaximized ? 'Restore height' : 'Maximize height',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _toggleMaximize(maxHeight),
+                ),
                 IconButton(
                   icon: const Icon(Icons.copy, size: 16),
                   tooltip: 'Copy details to clipboard',
+                  visualDensity: VisualDensity.compact,
                   onPressed: () {
                     final text = 'Timestamp: ${record.timestamp}\n'
                         'Service: ${record.serviceName}\n'
@@ -64,11 +180,14 @@ class LogDetailPanel extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 16),
-                  onPressed: onClose,
+                  tooltip: 'Close inspector',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: widget.onClose,
                 ),
               ],
             ),
           ),
+
           // Content
           Expanded(
             child: SingleChildScrollView(

@@ -111,7 +111,7 @@ class _NetworkServicesScreenState extends State<NetworkServicesScreen>
                   ),
                 ),
                 Tab(
-                  icon: const Icon(Icons.power_settings_new, size: 18),
+                  icon: const Icon(Icons.bolt_outlined, size: 18),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

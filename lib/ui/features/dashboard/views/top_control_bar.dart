@@ -81,7 +81,7 @@ class TopControlBar extends StatelessWidget {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'DHCP • NTP • DNS Server Suite',
+                  'DHCP • NTP • DNS • WOL Suite',
                   style: TextStyle(fontSize: 10, color: Colors.grey),
                 ),
               ],

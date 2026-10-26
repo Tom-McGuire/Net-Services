@@ -117,7 +117,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
           color: Theme.of(context).colorScheme.surfaceContainer,
           child: Row(
             children: [
-              Icon(Icons.power_settings_new, size: 20, color: Theme.of(context).colorScheme.primary),
+              Icon(Icons.bolt_outlined, size: 20, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
               const Text(
                 'Wake-on-LAN (WOL)',
@@ -216,7 +216,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.power_settings_new, size: 64, color: Colors.grey.shade600),
+          Icon(Icons.bolt_outlined, size: 64, color: Colors.grey.shade600),
           const SizedBox(height: 16),
           const Text(
             'No Wake-on-LAN Devices Configured',
@@ -514,7 +514,7 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.power_settings_new, color: Theme.of(context).colorScheme.primary, size: 22),
+          Icon(Icons.bolt_outlined, color: Theme.of(context).colorScheme.primary, size: 22),
           const SizedBox(width: 10),
           Text(isEditing ? 'Edit Wake-on-LAN Device' : 'Add Wake-on-LAN Device'),
         ],
