@@ -132,7 +132,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
       startIp: iface.hostIpPlusOne,
       subnetMask: iface.subnetMask,
       gatewayIp: iface.ip,
-      dnsServerIp: iface.ip,
+      dnsServerIp: _dhcpConfig.useLocalDns ? iface.ip : _dhcpConfig.dnsServerIp,
     );
     _repository.updateDhcpConfig(_dhcpConfig);
   }
@@ -164,6 +164,16 @@ class NetworkServicesViewModel extends ChangeNotifier {
       _dhcpPort = port;
       notifyListeners();
     }
+  }
+
+  void setUseLocalDns(bool useLocal) {
+    final hostIp = _selectedInterface?.ip ?? '127.0.0.1';
+    _dhcpConfig = _dhcpConfig.copyWith(
+      useLocalDns: useLocal,
+      dnsServerIp: useLocal ? hostIp : _dhcpConfig.dnsServerIp,
+    );
+    _repository.updateDhcpConfig(_dhcpConfig);
+    notifyListeners();
   }
 
   void updateDhcpConfig(DhcpConfig config) {
@@ -208,6 +218,10 @@ class NetworkServicesViewModel extends ChangeNotifier {
         addr = InternetAddress.tryParse(_selectedInterface!.ip);
       }
       // H1: Bind consistently with startAll and provide serverIp
+      if (_dhcpConfig.useLocalDns && _selectedInterface != null) {
+        _dhcpConfig = _dhcpConfig.copyWith(dnsServerIp: _selectedInterface!.ip);
+        _repository.updateDhcpConfig(_dhcpConfig);
+      }
       await _repository.startDhcp(
         port: _dhcpPort,
         bindAddress: addr ?? InternetAddress.anyIPv4,
@@ -221,6 +235,10 @@ class NetworkServicesViewModel extends ChangeNotifier {
     InternetAddress? addr;
     if (_selectedInterface != null) {
       addr = InternetAddress.tryParse(_selectedInterface!.ip);
+    }
+    if (_dhcpConfig.useLocalDns && _selectedInterface != null) {
+      _dhcpConfig = _dhcpConfig.copyWith(dnsServerIp: _selectedInterface!.ip);
+      _repository.updateDhcpConfig(_dhcpConfig);
     }
     await _repository.startAll(
       dnsPort: _dnsPort,

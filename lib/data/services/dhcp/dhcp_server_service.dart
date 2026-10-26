@@ -172,7 +172,7 @@ class DhcpServerService {
       serverIp: _serverIp,
       subnetMask: config.subnetMask,
       routerIp: config.gatewayIp,
-      dnsServerIp: config.dnsServerIp,
+      dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
       leaseTimeSeconds: config.leaseTimeSeconds,
     );
 
@@ -217,7 +217,7 @@ class DhcpServerService {
         serverIp: _serverIp,
         subnetMask: config.subnetMask,
         routerIp: config.gatewayIp,
-        dnsServerIp: config.dnsServerIp,
+        dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
         leaseTimeSeconds: 0,
         errorMessage: 'Requested address unavailable or invalid',
       );
@@ -241,7 +241,7 @@ class DhcpServerService {
       serverIp: _serverIp,
       subnetMask: config.subnetMask,
       routerIp: config.gatewayIp,
-      dnsServerIp: config.dnsServerIp,
+      dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
       leaseTimeSeconds: config.leaseTimeSeconds,
     );
 

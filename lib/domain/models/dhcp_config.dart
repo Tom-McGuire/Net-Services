@@ -7,6 +7,7 @@ class DhcpConfig {
   final String gatewayIp;
   final String dnsServerIp;
   final int leaseTimeSeconds;
+  final bool useLocalDns;
 
   static const DhcpConfig defaultConfig = DhcpConfig(
     startIp: '192.168.1.100',
@@ -15,6 +16,7 @@ class DhcpConfig {
     gatewayIp: '192.168.1.1',
     dnsServerIp: '192.168.1.1',
     leaseTimeSeconds: 86400,
+    useLocalDns: false,
   );
 
   const DhcpConfig({
@@ -24,6 +26,7 @@ class DhcpConfig {
     required this.gatewayIp,
     required this.dnsServerIp,
     this.leaseTimeSeconds = 86400, // 24 hours
+    this.useLocalDns = false,
   });
 
   /// Dynamically computes the last address based on startIp and poolSize.
@@ -42,6 +45,7 @@ class DhcpConfig {
     String? gatewayIp,
     String? dnsServerIp,
     int? leaseTimeSeconds,
+    bool? useLocalDns,
   }) {
     return DhcpConfig(
       startIp: startIp ?? this.startIp,
@@ -50,6 +54,7 @@ class DhcpConfig {
       gatewayIp: gatewayIp ?? this.gatewayIp,
       dnsServerIp: dnsServerIp ?? this.dnsServerIp,
       leaseTimeSeconds: leaseTimeSeconds ?? this.leaseTimeSeconds,
+      useLocalDns: useLocalDns ?? this.useLocalDns,
     );
   }
 

@@ -16,10 +16,12 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
   late TextEditingController _portController;
   late TextEditingController _startIpController;
   late TextEditingController _poolSizeController;
+  late TextEditingController _endIpController;
   late TextEditingController _subnetMaskController;
   late TextEditingController _gatewayController;
   late TextEditingController _dnsController;
   late TextEditingController _leaseHoursController;
+  bool _useLocalDns = false;
 
   @override
   void initState() {
@@ -28,19 +30,43 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     _portController = TextEditingController(text: vm.dhcpPort.toString());
     _startIpController = TextEditingController(text: vm.dhcpConfig.startIp);
     _poolSizeController = TextEditingController(text: vm.dhcpConfig.poolSize.toString());
+    _endIpController = TextEditingController(text: vm.dhcpConfig.endIp);
     _subnetMaskController = TextEditingController(text: vm.dhcpConfig.subnetMask);
     _gatewayController = TextEditingController(text: vm.dhcpConfig.gatewayIp);
     _dnsController = TextEditingController(text: vm.dhcpConfig.dnsServerIp);
     _leaseHoursController = TextEditingController(
       text: (vm.dhcpConfig.leaseTimeSeconds ~/ 3600).toString(),
     );
+    _useLocalDns = vm.dhcpConfig.useLocalDns;
+
+    _startIpController.addListener(_recalculateEndIp);
+    _poolSizeController.addListener(_recalculateEndIp);
+  }
+
+  void _recalculateEndIp() {
+    final startIp = _startIpController.text.trim();
+    final poolSize = int.tryParse(_poolSizeController.text.trim()) ?? 0;
+    final startNum = DhcpConfig.ipToNum(startIp);
+    if (startNum == 0 || poolSize <= 0) {
+      if (_endIpController.text != startIp) {
+        _endIpController.text = startIp;
+      }
+    } else {
+      final computed = DhcpConfig.numToIp(startNum + poolSize - 1);
+      if (_endIpController.text != computed) {
+        _endIpController.text = computed;
+      }
+    }
   }
 
   @override
   void dispose() {
+    _startIpController.removeListener(_recalculateEndIp);
+    _poolSizeController.removeListener(_recalculateEndIp);
     _portController.dispose();
     _startIpController.dispose();
     _poolSizeController.dispose();
+    _endIpController.dispose();
     _subnetMaskController.dispose();
     _gatewayController.dispose();
     _dnsController.dispose();
@@ -48,9 +74,15 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     super.dispose();
   }
 
-  void _syncControllersWithVm(DhcpConfig config) {
+  void _syncControllersWithVm(DhcpConfig config, NetworkServicesViewModel vm) {
     if (_startIpController.text != config.startIp) {
       _startIpController.text = config.startIp;
+    }
+    if (_poolSizeController.text != config.poolSize.toString()) {
+      _poolSizeController.text = config.poolSize.toString();
+    }
+    if (_endIpController.text != config.endIp) {
+      _endIpController.text = config.endIp;
     }
     if (_subnetMaskController.text != config.subnetMask) {
       _subnetMaskController.text = config.subnetMask;
@@ -58,8 +90,10 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     if (_gatewayController.text != config.gatewayIp) {
       _gatewayController.text = config.gatewayIp;
     }
-    if (_dnsController.text != config.dnsServerIp) {
-      _dnsController.text = config.dnsServerIp;
+    _useLocalDns = config.useLocalDns;
+    final expectedDns = _useLocalDns ? (vm.selectedInterface?.ip ?? config.dnsServerIp) : config.dnsServerIp;
+    if (_dnsController.text != expectedDns) {
+      _dnsController.text = expectedDns;
     }
   }
 
@@ -68,7 +102,8 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     final poolSize = int.tryParse(_poolSizeController.text.trim()) ?? 20;
     final mask = _subnetMaskController.text.trim();
     final gateway = _gatewayController.text.trim();
-    final dns = _dnsController.text.trim();
+    final hostIp = vm.selectedInterface?.ip ?? '127.0.0.1';
+    final dns = _useLocalDns ? hostIp : _dnsController.text.trim();
     final hours = int.tryParse(_leaseHoursController.text.trim()) ?? 24;
 
     final newConfig = DhcpConfig(
@@ -78,6 +113,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
       gatewayIp: gateway,
       dnsServerIp: dns,
       leaseTimeSeconds: hours * 3600,
+      useLocalDns: _useLocalDns,
     );
 
     final errors = newConfig.validate();
@@ -125,6 +161,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
           'You are about to start a DHCP server on interface "$iface" ($ip).\n\n'
           'Running a DHCP server on an existing network with another DHCP server or router '
           'can cause IP conflicts and disconnect network clients.\n\n'
+          '${_useLocalDns ? "DNS Option: Clients will receive this machine ($ip) as their DNS server to resolve local device names via the built-in DNS service.\n\n" : ""}'
           'Do you wish to start the DHCP server?',
         ),
         actions: [
@@ -142,6 +179,10 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     );
 
     if (confirmed == true) {
+      // If user enabled local DNS and DNS server isn't active, activate it as well
+      if (_useLocalDns && !vm.dnsStatus.isRunning) {
+        await vm.toggleDns();
+      }
       await vm.toggleDhcp();
     }
   }
@@ -153,8 +194,10 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     final config = vm.dhcpConfig;
 
     if (!isRunning) {
-      _syncControllersWithVm(config);
+      _syncControllersWithVm(config, vm);
     }
+
+    final hostIp = vm.selectedInterface?.ip ?? '127.0.0.1';
 
     return Column(
       children: [
@@ -245,29 +288,18 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                       ),
                     ),
                   ),
-                  // Calculated End IP display badge
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('End IP:', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Theme.of(context).dividerColor),
-                        ),
-                        child: Text(
-                          config.endIp,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                  // End IP (styled consistently with the other text boxes)
+                  SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: _endIpController,
+                      readOnly: true,
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                      decoration: const InputDecoration(
+                        labelText: 'End IP',
+                        isDense: true,
                       ),
-                    ],
+                    ),
                   ),
                   // Subnet Mask
                   SizedBox(
@@ -300,10 +332,11 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                     width: 140,
                     child: TextField(
                       controller: _dnsController,
-                      enabled: !isRunning,
+                      enabled: !isRunning && !_useLocalDns,
+                      readOnly: _useLocalDns,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                      decoration: const InputDecoration(
-                        labelText: 'DNS Server',
+                      decoration: InputDecoration(
+                        labelText: _useLocalDns ? 'DNS Server (This App)' : 'DNS Server',
                         isDense: true,
                       ),
                     ),
@@ -332,6 +365,59 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+
+              // Local DNS Server Option
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: isRunning
+                    ? null
+                    : () {
+                        setState(() {
+                          _useLocalDns = !_useLocalDns;
+                          if (_useLocalDns) {
+                            _dnsController.text = hostIp;
+                          }
+                        });
+                        vm.setUseLocalDns(_useLocalDns);
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: Checkbox(
+                          value: _useLocalDns,
+                          onChanged: isRunning
+                              ? null
+                              : (val) {
+                                  setState(() {
+                                    _useLocalDns = val ?? false;
+                                    if (_useLocalDns) {
+                                      _dnsController.text = hostIp;
+                                    }
+                                  });
+                                  vm.setUseLocalDns(_useLocalDns);
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Hand out this machine\'s IP ($hostIp) as DNS server to resolve device names with the built-in DNS service',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isRunning ? Colors.grey : Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
