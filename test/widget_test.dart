@@ -18,6 +18,7 @@ void main() {
     expect(find.text('DHCP Server'), findsWidgets);
     expect(find.text('NTP Time Server'), findsOneWidget);
     expect(find.text('DNS Server'), findsWidgets);
+    expect(find.text('Wake-on-LAN'), findsWidgets);
     expect(find.text('Activity Logs'), findsOneWidget);
   });
 }

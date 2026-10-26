@@ -9,6 +9,7 @@ import '../../../../domain/models/dns_record.dart';
 import '../../../../domain/models/network_interface_info.dart';
 import '../../../../domain/models/service_log_record.dart';
 import '../../../../domain/models/service_status.dart';
+import '../../../../domain/models/wol_device.dart';
 
 class NetworkServicesViewModel extends ChangeNotifier {
   final NetworkServicesRepository _repository;
@@ -40,6 +41,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   StreamSubscription? _ntpSub;
   StreamSubscription? _dhcpSub;
   StreamSubscription? _leaseSub;
+  StreamSubscription? _wolSub;
 
   NetworkServicesViewModel({NetworkServicesRepository? repository})
       : _repository = repository ?? NetworkServicesRepository() {
@@ -63,6 +65,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   DhcpConfig get dhcpConfig => _dhcpConfig;
   List<DhcpLease> get dhcpLeases => _repository.dhcpLeases;
   List<DnsRecord> get dnsRecords => _dnsRecords;
+  List<WolDevice> get wolDevices => _repository.wolDevices;
 
   ServiceLogRecord? get selectedLog => _selectedLog;
   String get logFilter => _logFilter;
@@ -123,6 +126,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _ntpSub = _repository.ntpStatusStream.listen((_) => notifyListeners());
     _dhcpSub = _repository.dhcpStatusStream.listen((_) => notifyListeners());
     _leaseSub = _repository.dhcpLeasesStream.listen((_) => notifyListeners());
+    _wolSub = _repository.wolDevicesStream.listen((_) => notifyListeners());
 
     notifyListeners();
   }
@@ -217,11 +221,11 @@ class NetworkServicesViewModel extends ChangeNotifier {
       if (_selectedInterface != null) {
         addr = InternetAddress.tryParse(_selectedInterface!.ip);
       }
-      // H1: Bind consistently with startAll and provide serverIp
       if (_dhcpConfig.useLocalDns && _selectedInterface != null) {
         _dhcpConfig = _dhcpConfig.copyWith(dnsServerIp: _selectedInterface!.ip);
         _repository.updateDhcpConfig(_dhcpConfig);
       }
+      // H1: Bind consistently with startAll and provide serverIp
       await _repository.startDhcp(
         port: _dhcpPort,
         bindAddress: addr ?? InternetAddress.anyIPv4,
@@ -268,6 +272,13 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _repository.removeDnsRecord(domain);
     notifyListeners();
   }
+
+  // Wake-on-LAN (WOL) Operations
+  Future<void> addWolDevice(WolDevice device) => _repository.addWolDevice(device);
+  Future<void> updateWolDevice(WolDevice device) => _repository.updateWolDevice(device);
+  Future<void> deleteWolDevice(String id) => _repository.deleteWolDevice(id);
+  Future<bool> wakeDevice(WolDevice device) => _repository.wakeDevice(device);
+  Future<String?> resolveMacFromIp(String ip) => _repository.resolveMacFromIp(ip);
 
   // DHCP Leases
   void clearDhcpLeases() {
@@ -321,6 +332,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _ntpSub?.cancel();
     _dhcpSub?.cancel();
     _leaseSub?.cancel();
+    _wolSub?.cancel();
     _repository.dispose();
     super.dispose();
   }

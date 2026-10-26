@@ -1,4 +1,4 @@
-enum ServiceType { dns, ntp, dhcp, system }
+enum ServiceType { dns, ntp, dhcp, system, wol }
 enum LogSeverity { info, warning, error, success }
 
 class ServiceLogRecord {
@@ -32,6 +32,8 @@ class ServiceLogRecord {
         return 'DHCP';
       case ServiceType.system:
         return 'SYSTEM';
+      case ServiceType.wol:
+        return 'WOL';
     }
   }
 }

@@ -30,6 +30,8 @@ class ActivityLogTableView extends StatelessWidget {
               _filterChip(context, vm, 'NTP', 'NTP'),
               const SizedBox(width: 6),
               _filterChip(context, vm, 'DNS', 'DNS'),
+              const SizedBox(width: 6),
+              _filterChip(context, vm, 'WOL', 'WOL'),
               const Spacer(),
 
               // Search field
@@ -189,6 +191,8 @@ class ActivityLogTableView extends StatelessWidget {
         return Colors.lightBlueAccent;
       case ServiceType.system:
         return Colors.purpleAccent;
+      case ServiceType.wol:
+        return Colors.cyanAccent;
     }
   }
 

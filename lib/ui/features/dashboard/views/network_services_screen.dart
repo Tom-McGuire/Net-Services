@@ -5,6 +5,7 @@ import '../../dhcp/views/dhcp_service_panel.dart';
 import '../../dns/views/dns_service_panel.dart';
 import '../../ntp/views/ntp_service_panel.dart';
 import '../../shared/log_detail_panel.dart';
+import '../../wol/views/wol_service_panel.dart';
 import '../view_models/network_services_view_model.dart';
 import 'activity_log_table_view.dart';
 import 'global_error_banner.dart';
@@ -25,7 +26,7 @@ class _NetworkServicesScreenState extends State<NetworkServicesScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -110,6 +111,27 @@ class _NetworkServicesScreenState extends State<NetworkServicesScreen>
                   ),
                 ),
                 Tab(
+                  icon: const Icon(Icons.power_settings_new, size: 18),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Wake-on-LAN'),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          vm.wolDevices.length.toString(),
+                          style: const TextStyle(fontSize: 10, color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Tab(
                   icon: const Icon(Icons.list_alt_outlined, size: 18),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -142,6 +164,7 @@ class _NetworkServicesScreenState extends State<NetworkServicesScreen>
                 DhcpServicePanel(),
                 NtpServicePanel(),
                 DnsServicePanel(),
+                WakeOnLanPanel(),
                 ActivityLogTableView(),
               ],
             ),
