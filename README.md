@@ -4,7 +4,7 @@ A portable, cross-platform local network services utility desktop application bu
 
 Part of the **Network Services Family** alongside [Syslog Server](https://github.com/Tom-McGuire/Syslog-Server) and [Packet Inspector](https://github.com/Tom-McGuire/Packet-Inspector).
 
-Designed for network engineers, embedded/IoT developers, system administrators, and testers who need to quickly spin up, configure, and monitor essential network services (**DHCP Server**, **Network Time / NTP Server**, and **DNS Server**) on demand with zero external dependencies.
+Designed for network engineers, embedded/IoT developers, system administrators, and testers who need to quickly spin up, configure, and monitor essential network services (**DHCP Server**, **Network Time / NTP Server**, **DNS Server**, and **Wake-on-LAN**) on demand with zero external dependencies.
 
 ---
 
@@ -20,6 +20,7 @@ Designed for network engineers, embedded/IoT developers, system administrators, 
   - **Starting IP (First Address)** defaults automatically to **Host IP + 1** (e.g. `10.101.1.51`), fully editable.
   - **Subnet Mask** auto-detected from active network interface CIDR prefix (e.g. `/24` &rarr; `255.255.255.0`), fully editable.
   - **Router / Default Gateway & DNS Server** pre-populated with host IP address.
+  - **Local DNS Advertising**: Option to hand out host machine's IP as DNS server to resolve local hostnames.
   - **Range Size** input with real-time dynamic calculation of the **Last Address**.
 - **Active Leases Table**:
   - Real-time tracking of assigned IP addresses, client MAC addresses, client hostnames, expiration countdowns, and active status.
@@ -40,9 +41,14 @@ Designed for network engineers, embedded/IoT developers, system administrators, 
 - **Live Query Resolution Feed**:
   - Real-time logging of incoming DNS queries with resolution status (`RESOLVED` vs `NXDOMAIN`), transaction IDs, and client IP addresses.
 
+### ⚡ Wake-on-LAN (WOL)
+- **Magic Packet Generator**: Broadcast standard 102-byte Magic Packets (UDP port 9 or 7) to wake remote network devices.
+- **ARP IP-to-MAC Resolver**: Enter the IP address of any online host on the local subnet to automatically query the system ARP cache and resolve its hardware MAC address.
+- **Persistent Device Profiles**: Label and save machines with persistent local JSON storage (`wol_devices.json`) and instant one-click wake triggers.
+
 ### 📊 Unified Activity Log & Event Inspector
-- Unified chronological log stream across all services with search and filtering (`ALL`, `DHCP`, `NTP`, `DNS`).
-- **Deep Event Inspector Panel**: Click any log entry or lease to inspect raw packet fields, timestamps, client addresses, and transaction details.
+- Unified chronological log stream across all services with search and filtering (`ALL`, `DHCP`, `NTP`, `DNS`, `WOL`).
+- **Resizable Event Inspector Panel**: Vertically resizable bottom inspector with drag handle, maximize/restore toggle, and persistent height. Click any log entry or lease to inspect raw packet fields, timestamps, client addresses, and transaction details.
 - **Export**: One-click export of captured logs to **CSV** or **JSON**.
 
 ### 🎨 Family Design System Alignment
@@ -54,6 +60,13 @@ Designed for network engineers, embedded/IoT developers, system administrators, 
 ---
 
 ## 🚀 Getting Started
+
+### 🛡️ Note on Windows / macOS Security Prompts
+
+These tools are free and independent projects and are not yet code-signed with expensive commercial certificates:
+
+- **Windows**: If SmartScreen appears, click "More info" &rarr; "Run anyway".
+- **macOS**: Right-click the `.app` file, select **Open**, and confirm the prompt (or run `xattr -c NetServices.app` in Terminal).
 
 ### Prerequisites
 - [Flutter SDK](https://flutter.dev) (version 3.13+ or higher)
@@ -106,7 +119,7 @@ Run the full automated test suite:
 flutter test
 ```
 
-Includes unit tests for DNS RFC 1035 packet encoding/decoding, NTP RFC 5905 48-byte responses, DHCP lease allocation/range calculations, DHCP handshake packet serialization, and widget smoke tests.
+Includes unit tests for DNS RFC 1035 packet encoding/decoding, NTP RFC 5905 48-byte responses, DHCP lease allocation/range calculations, DHCP handshake packet serialization, Wake-on-LAN Magic Packet generation and MAC parsing, and widget smoke tests.
 
 ---
 
