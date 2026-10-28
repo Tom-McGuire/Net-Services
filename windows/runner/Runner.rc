@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.netservices" "\0"
-            VALUE "FileDescription", "net_services" "\0"
+            VALUE "CompanyName", "Tom McGuire" "\0"
+            VALUE "FileDescription", "Net Services - Network Services Suite" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "net_services" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.netservices. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Tom McGuire. All rights reserved." "\0"
             VALUE "OriginalFilename", "net_services.exe" "\0"
-            VALUE "ProductName", "net_services" "\0"
+            VALUE "ProductName", "Net Services" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
