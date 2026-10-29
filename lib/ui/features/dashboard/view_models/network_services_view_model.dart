@@ -23,11 +23,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   int _dhcpPort = 67;
 
   late DhcpConfig _dhcpConfig;
-  final List<DnsRecord> _dnsRecords = [
-    const DnsRecord(domain: 'router.local', ip: '192.168.1.1'),
-    const DnsRecord(domain: 'gateway.local', ip: '192.168.1.1'),
-    const DnsRecord(domain: 'testdevice.local', ip: '192.168.1.100'),
-  ];
+  final List<DnsRecord> _dnsRecords = [];
 
   ServiceLogRecord? _selectedLog;
   String _logFilter = 'ALL';
