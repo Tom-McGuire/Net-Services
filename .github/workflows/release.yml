@@ -1,0 +1,115 @@
+# ==============================================================================
+# Universal GitHub Actions Workflow for Flutter Desktop Releases
+# Target Platforms: Windows (x64), Linux (x64), macOS (Universal)
+# Usage:
+#   1. Place this file in your project at: .github/workflows/release.yml
+#   2. Push to GitHub
+#   3. Create and push a tag (e.g. `git tag v0.5.0.Beta` && `git push origin v0.5.0.Beta`)
+# ==============================================================================
+
+name: Build and Release Flutter Desktop
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on any tag starting with 'v' (e.g. v0.5.0.Beta, v1.0.0)
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os-name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os-name: Windows
+            target: windows
+          - os: macos-latest
+            os-name: macOS
+            target: macos
+          - os: ubuntu-latest
+            os-name: Linux
+            target: linux
+
+    steps:
+      # Step 1: Check out source code
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Step 2: Install Linux build dependencies (includes sqlite3 for database tools)
+      - name: Install Linux build dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsqlite3-dev
+
+      # Step 3: Install Flutter SDK
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      # Step 4: Resolve dependencies
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      # Step 5a: Build & Package Windows (x64 Zip)
+      - name: Build Windows
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          flutter build windows --release --no-tree-shake-icons
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "${{ github.event.repository.name }}_windows_x64.zip"
+
+      # Step 5b: Build & Package Linux (x64 Tarball)
+      - name: Build Linux
+        if: matrix.target == 'linux'
+        run: |
+          flutter build linux --release --no-tree-shake-icons
+          tar -czvf "${{ github.event.repository.name }}_linux_x64.tar.gz" -C build/linux/x64/release/bundle .
+
+      # Step 5c: Build & Package macOS (Universal Zip)
+      - name: Build macOS
+        if: matrix.target == 'macos'
+        run: |
+          flutter build macos --release --no-tree-shake-icons
+          cd build/macos/Build/Products/Release
+          zip -r "$GITHUB_WORKSPACE/${{ github.event.repository.name }}_macos.zip" *.app
+
+      # Step 6: Stash the archive as a temporary workflow artifact
+      - name: Stash build asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-asset
+          path: |
+            *windows*.zip
+            *linux*.tar.gz
+            *macos*.zip
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Grants permission to create and attach assets to GitHub Releases
+    steps:
+      # Step 1: Download all assets generated in parallel by the build matrix
+      - name: Download all build assets
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      # Step 2: Create GitHub Release and upload all platform binaries
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ### Note on Windows / macOS Security Prompts
+            These tools are free and independent projects and are not yet code-signed with expensive commercial certificates:
+            - **Windows**: If SmartScreen appears, click "More info" → "Run anyway".
+            - **macOS**: Right-click the `.app` file, select Open, and confirm the prompt (or run `xattr -c NetServices.app` in Terminal).
