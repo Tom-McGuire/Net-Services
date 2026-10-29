@@ -109,6 +109,15 @@ Binding standard ports (**53**, **67**, **123**) requires elevated privileges on
    - NTP: `1123`
    - DHCP: `6767`
 
+### ⏰ Note for Windows NTP (Port 123)
+On Windows, the built-in **Windows Time** system service (`w32time`) runs by default and binds UDP port 123 with exclusive access (`SO_EXCLUSIVEADDRUSE`).
+- If you encounter `SocketException: (OS Error: errno = 10013)` when starting NTP on port 123:
+  1. Open Command Prompt or PowerShell as **Administrator**.
+  2. Run: `net stop w32time` (or `Stop-Service w32time`) to release UDP port 123.
+  3. Return to Net-Services and click **Start NTP**.
+  4. (Optional) When finished, run `net start w32time` to resume standard Windows time synchronization.
+- Alternatively, you can test without stopping the service by switching NTP to the unprivileged test preset port **`1123`**.
+
 ---
 
 ## 🧪 Testing

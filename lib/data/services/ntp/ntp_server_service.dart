@@ -73,11 +73,24 @@ class NtpServerService {
         lastError: e.toString(),
       );
       _statusController.add(_status);
+      String details =
+          'Ensure you have permission to bind to port $port (run with sudo/setcap on Linux if port < 1024), or try an unprivileged port like 1123.';
+
+      if (Platform.isWindows && port == 123 && (e.toString().contains('10013') || e.toString().contains('forbidden'))) {
+        details = 'On Windows, the built-in Windows Time service (W32Time) is running and holds UDP port 123 exclusively.\n\n'
+            'To allow Net-Services to bind port 123:\n'
+            '1. Open PowerShell or Command Prompt as Administrator.\n'
+            '2. Run: net stop w32time\n'
+            '3. Return to Net-Services and click "Start NTP".\n\n'
+            '(To re-enable Windows Time later, run: net start w32time)\n'
+            'Alternatively, you can test without stopping W32Time by selecting unprivileged port 1123.';
+      }
+
       _emitLog(
         action: 'ERROR',
         summary: 'Failed to bind NTP port $port: $e',
         severity: LogSeverity.error,
-        details: 'Ensure you have permission to bind to port $port (run with sudo/setcap on Linux if port < 1024), or try an unprivileged port like 1123.',
+        details: details,
       );
     }
   }
