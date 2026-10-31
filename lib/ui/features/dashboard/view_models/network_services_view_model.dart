@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import '../../../../data/repositories/network_services_repository.dart';
+import '../../../../data/services/device/mac_address_helper.dart';
 import '../../../../data/services/export/csv_export_service.dart';
 import '../../../../domain/models/dhcp_config.dart';
 import '../../../../domain/models/dhcp_lease.dart';
+import '../../../../domain/models/dhcp_static_reservation.dart';
 import '../../../../domain/models/dns_record.dart';
 import '../../../../domain/models/network_interface_info.dart';
 import '../../../../domain/models/service_log_record.dart';
@@ -38,6 +41,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   StreamSubscription? _dhcpSub;
   StreamSubscription? _leaseSub;
   StreamSubscription? _wolSub;
+  StreamSubscription? _sharedDbSub;
 
   NetworkServicesViewModel({NetworkServicesRepository? repository})
       : _repository = repository ?? NetworkServicesRepository() {
@@ -123,6 +127,14 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _dhcpSub = _repository.dhcpStatusStream.listen((_) => notifyListeners());
     _leaseSub = _repository.dhcpLeasesStream.listen((_) => notifyListeners());
     _wolSub = _repository.wolDevicesStream.listen((_) => notifyListeners());
+
+    try {
+      if (SharedDeviceDatabase.instance.isInitialized) {
+        _sharedDbSub = SharedDeviceDatabase.instance.onDatabaseChanged.listen((_) {
+          notifyListeners();
+        });
+      }
+    } catch (_) {}
 
     notifyListeners();
   }
@@ -321,6 +333,24 @@ class NetworkServicesViewModel extends ChangeNotifier {
     return CsvExportService.exportToFile(json, filename);
   }
 
+  // Static Reservations & Shared Devices
+  void addStaticReservation(DhcpStaticReservation reservation) {
+    _repository.addStaticReservation(reservation);
+    _dhcpConfig = _repository.dhcpConfig;
+    notifyListeners();
+  }
+
+  void removeStaticReservation(String macAddress) {
+    _repository.removeStaticReservation(macAddress);
+    _dhcpConfig = _repository.dhcpConfig;
+    notifyListeners();
+  }
+
+  void updateSharedDeviceName(String mac, String newName) {
+    SharedDeviceHelper.updateDeviceName(mac, newName);
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _logSub?.cancel();
@@ -329,6 +359,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _dhcpSub?.cancel();
     _leaseSub?.cancel();
     _wolSub?.cancel();
+    _sharedDbSub?.cancel();
     _repository.dispose();
     super.dispose();
   }

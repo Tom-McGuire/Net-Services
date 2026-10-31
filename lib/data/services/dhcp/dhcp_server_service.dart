@@ -4,6 +4,7 @@ import '../../../domain/models/dhcp_config.dart';
 import '../../../domain/models/dhcp_lease.dart';
 import '../../../domain/models/service_log_record.dart';
 import '../../../domain/models/service_status.dart';
+import '../device/mac_address_helper.dart';
 import 'dhcp_lease_manager.dart';
 import 'dhcp_packet_parser.dart';
 
@@ -137,6 +138,10 @@ class DhcpServerService {
   }
 
   void _handleDiscover(DhcpPacket packet) {
+    // Inspect client MAC address in SharedDeviceDatabase
+    final knownDevice = SharedDeviceHelper.getDevice(packet.chaddrMac);
+    final friendlyName = knownDevice?.name ?? packet.hostname;
+
     // Reserve tentatively without committing a 24-hr lease (prevents starvation)
     final offeredIp = _leaseManager.reserveOrGetOffer(
       packet.chaddrMac,
@@ -155,11 +160,12 @@ class DhcpServerService {
 
     _emitLog(
       action: 'DISCOVER',
-      summary: 'DHCPDISCOVER from ${packet.chaddrMac} (${packet.hostname ?? "Unknown"})',
+      summary: 'DHCPDISCOVER from ${packet.chaddrMac} (${friendlyName ?? "Unknown"})',
       clientAddress: packet.chaddrMac,
       severity: LogSeverity.info,
       details: 'Transaction ID: 0x${packet.xid.toRadixString(16).padLeft(8, '0')}\n'
           'Client MAC: ${packet.chaddrMac}\n'
+          'Device Name: ${friendlyName ?? "None"}\n'
           'Requested IP: ${packet.requestedIp ?? "None"}\n'
           'Offered IP: $offeredIp',
     );
@@ -180,7 +186,7 @@ class DhcpServerService {
 
     _emitLog(
       action: 'OFFER',
-      summary: 'DHCPOFFER $offeredIp sent to ${packet.chaddrMac}',
+      summary: 'DHCPOFFER $offeredIp sent to ${packet.chaddrMac}${friendlyName != null ? " ($friendlyName)" : ""}',
       clientAddress: packet.chaddrMac,
       severity: LogSeverity.success,
     );
@@ -200,12 +206,24 @@ class DhcpServerService {
       return;
     }
 
+    // Inspect client MAC address in SharedDeviceDatabase or register new
+    final knownDevice = SharedDeviceHelper.getDevice(packet.chaddrMac);
+    final friendlyName = knownDevice?.name ?? packet.hostname;
+    if (knownDevice == null) {
+      SharedDeviceHelper.registerDiscoveredDevice(
+        packet.chaddrMac,
+        hostname: packet.hostname,
+        notes: 'Discovered by DHCPREQUEST',
+      );
+    }
+
     final targetIp = packet.requestedIp ?? (packet.ciaddr != '0.0.0.0' ? packet.ciaddr : null);
 
     final lease = _leaseManager.confirmLease(
       packet.chaddrMac,
       requestedIp: targetIp,
       hostname: packet.hostname,
+      friendlyName: friendlyName,
     );
 
     if (lease == null) {
@@ -253,14 +271,16 @@ class DhcpServerService {
 
     _emitLog(
       action: 'ACK',
-      summary: 'DHCPACK: Leased ${lease.ipAddress} to ${packet.chaddrMac} (${lease.hostname})',
+      summary: 'DHCPACK: Leased ${lease.ipAddress} to ${packet.chaddrMac} (${lease.displayName})',
       clientAddress: packet.chaddrMac,
       severity: LogSeverity.success,
       details: 'Assigned IP: ${lease.ipAddress}\n'
           'MAC: ${lease.macAddress}\n'
+          'Device Name: ${lease.displayName}\n'
           'Hostname: ${lease.hostname}\n'
+          'Static Reservation: ${lease.isStatic ? "Yes" : "No"}\n'
           'Server IP: $_serverIp\n'
-          'Lease Expiry: ${lease.leaseExpiry.toIso8601String()}',
+          'Lease Expiry: ${lease.isStatic ? "Permanent (Static)" : lease.leaseExpiry.toIso8601String()}',
     );
   }
 

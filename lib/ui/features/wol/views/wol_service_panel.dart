@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:provider/provider.dart';
+import '../../../../data/services/device/mac_address_helper.dart';
 import '../../../../domain/models/wol_device.dart';
 import '../../dashboard/view_models/network_services_view_model.dart';
 
@@ -63,6 +65,38 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _WolDeviceDialog(device: existingDevice),
+    );
+  }
+
+  void _showSharedDevicePicker({void Function(SharedDevice)? onSelect}) {
+    final allDevices = SharedDeviceHelper.getAllDevices();
+    if (allDevices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No devices found in Shared Device database. Discovered devices will appear here.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => _SharedDevicePickerDialog(
+        devices: allDevices,
+        onSelect: (selected) {
+          if (onSelect != null) {
+            onSelect(selected);
+          } else {
+            // Selecting a device immediately fills target MAC address field!
+            _showDeviceDialog(WolDevice(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              name: selected.name,
+              macAddress: selected.macAddress,
+            ));
+          }
+        },
+      ),
     );
   }
 
@@ -137,34 +171,45 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
               ),
               const SizedBox(width: 16),
               // Search input
-              SizedBox(
-                width: 240,
-                height: 36,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: 'Search by name, MAC, or IP...',
-                    prefixIcon: const Icon(Icons.search, size: 16),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 14),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {});
-                            },
-                          )
-                        : null,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      borderSide: BorderSide(color: Theme.of(context).dividerColor),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, MAC, IP...',
+                      prefixIcon: const Icon(Icons.search, size: 16),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 14),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
                     ),
                   ),
                 ),
               ),
               const Spacer(),
+              OutlinedButton.icon(
+                onPressed: () => _showSharedDevicePicker(),
+                icon: const Icon(Icons.download_outlined, size: 16),
+                label: const Text('Import from Shared Devices'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: () => _showDeviceDialog(),
                 icon: const Icon(Icons.add, size: 16),
@@ -232,10 +277,22 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
             ),
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => _showDeviceDialog(),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add Your First Device'),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: () => _showDeviceDialog(),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add Your First Device'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _showSharedDevicePicker(),
+                icon: const Icon(Icons.download_outlined, size: 16),
+                label: const Text('Import from Shared Devices'),
+              ),
+            ],
           ),
         ],
       ),
@@ -245,6 +302,10 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
   Widget _buildDeviceCard(WolDevice device, bool isWaking, NetworkServicesViewModel vm) {
     final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
     final lastWokenStr = device.lastWoken != null ? dateFormat.format(device.lastWoken!) : 'Never';
+    final sharedDevice = SharedDeviceHelper.getDevice(device.macAddress);
+    final vendor = sharedDevice?.vendor ?? OuiLookup.lookupVendor(device.macAddress);
+    final cleanVendor = (vendor != 'Unknown Vendor' && vendor != 'Unknown Hardware') ? vendor : null;
+    final category = sharedDevice?.category ?? OuiLookup.inferCategory(cleanVendor);
 
     return Card(
       elevation: 0,
@@ -268,7 +329,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
-                    Icons.desktop_windows_outlined,
+                    category.icon,
                     size: 18,
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -325,6 +386,21 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                 ),
               ],
             ),
+            if (cleanVendor != null) ...[
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const Text('Vendor: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  Expanded(
+                    child: Text(
+                      cleanVendor,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 4),
             Row(
               children: [
@@ -401,6 +477,7 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
   bool _isResolving = false;
   String? _resolveStatusMessage;
   bool _resolveSuccess = false;
+  SharedDevice? _matchedSharedDevice;
 
   @override
   void initState() {
@@ -411,10 +488,36 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
     _ipController = TextEditingController(text: d?.ipAddress ?? '');
     _portController = TextEditingController(text: (d?.port ?? 9).toString());
     _broadcastController = TextEditingController(text: d?.broadcastAddress ?? '255.255.255.255');
+
+    _macController.addListener(_onMacInputChanged);
+    if (_macController.text.isNotEmpty) {
+      _onMacInputChanged();
+    }
+  }
+
+  void _onMacInputChanged() {
+    final raw = _macController.text.trim();
+    final norm = SharedDevice.normalizeMac(raw);
+    if (SharedDevice.isValidMac(norm)) {
+      final dev = SharedDeviceHelper.getDevice(norm);
+      if (mounted && dev != _matchedSharedDevice) {
+        setState(() {
+          _matchedSharedDevice = dev;
+          if (dev != null && _nameController.text.trim().isEmpty) {
+            _nameController.text = dev.name;
+          }
+        });
+      }
+    } else if (_matchedSharedDevice != null) {
+      setState(() {
+        _matchedSharedDevice = null;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _macController.removeListener(_onMacInputChanged);
     _nameController.dispose();
     _macController.dispose();
     _ipController.dispose();
@@ -482,6 +585,10 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
     final normalizedMac = WolDevice.normalizeMac(rawMac);
     if (normalizedMac == null) return;
 
+    if (name.isNotEmpty) {
+      SharedDeviceHelper.updateDeviceName(normalizedMac, name);
+    }
+
     final vm = context.read<NetworkServicesViewModel>();
     if (widget.device != null) {
       final updated = widget.device!.copyWith(
@@ -528,6 +635,43 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Device Identification',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        final all = SharedDeviceHelper.getAllDevices();
+                        if (all.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No devices found in Shared Device database')),
+                          );
+                          return;
+                        }
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => _SharedDevicePickerDialog(
+                            devices: all,
+                            onSelect: (selected) {
+                              setState(() {
+                                _macController.text = selected.macAddress;
+                                _nameController.text = selected.name;
+                                _matchedSharedDevice = selected;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.download_outlined, size: 16),
+                      label: const Text('Pick from Shared Devices'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
                 // Device Name
                 TextFormField(
                   controller: _nameController,
@@ -655,6 +799,29 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                     return null;
                   },
                 ),
+                if (_matchedSharedDevice != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.verified, size: 16, color: Colors.blueAccent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Known Suite Device: "${_matchedSharedDevice!.name}"${_matchedSharedDevice!.vendor != null ? " (${_matchedSharedDevice!.vendor})" : ""}',
+                            style: const TextStyle(fontSize: 12, color: Colors.lightBlueAccent, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
 
                 // Port & Broadcast Row
@@ -718,6 +885,145 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
         FilledButton(
           onPressed: _handleSave,
           child: Text(isEditing ? 'Save Changes' : 'Add Device'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SharedDevicePickerDialog extends StatefulWidget {
+  final List<SharedDevice> devices;
+  final void Function(SharedDevice selected) onSelect;
+
+  const _SharedDevicePickerDialog({
+    required this.devices,
+    required this.onSelect,
+  });
+
+  @override
+  State<_SharedDevicePickerDialog> createState() => _SharedDevicePickerDialogState();
+}
+
+class _SharedDevicePickerDialogState extends State<_SharedDevicePickerDialog> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = widget.devices.where((d) {
+      if (query.isEmpty) return true;
+      return d.name.toLowerCase().contains(query) ||
+          d.macAddress.toLowerCase().contains(query) ||
+          (d.vendor?.toLowerCase().contains(query) ?? false) ||
+          (d.category.label.toLowerCase().contains(query));
+    }).toList();
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.devices, color: Colors.lightBlueAccent, size: 22),
+          SizedBox(width: 10),
+          Text('Import from Shared Devices'),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        height: 440,
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Search by friendly name, MAC, or vendor...',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 14),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No matching shared devices found for "$query"',
+                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, idx) {
+                        final device = filtered[idx];
+                        return ListTile(
+                          dense: true,
+                          leading: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(device.category.icon, size: 20, color: Theme.of(context).colorScheme.primary),
+                          ),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  device.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  device.category.label,
+                                  style: const TextStyle(fontSize: 10, color: Colors.white70),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            'MAC: ${device.macAddress}${device.vendor != null ? ' • ${device.vendor}' : ''}',
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                          ),
+                          trailing: FilledButton.tonal(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              widget.onSelect(device);
+                            },
+                            child: const Text('Select'),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
         ),
       ],
     );

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import '../../domain/models/dhcp_config.dart';
 import '../../domain/models/dhcp_lease.dart';
+import '../../domain/models/dhcp_static_reservation.dart';
 import '../../domain/models/dns_record.dart';
 import '../../domain/models/network_interface_info.dart';
 import '../../domain/models/service_log_record.dart';
@@ -109,6 +111,19 @@ class NetworkServicesRepository {
   Future<void> stopDhcp() => _dhcpService.stop();
   void updateDhcpConfig(DhcpConfig config) => _dhcpService.updateConfig(config);
   void clearDhcpLeases() => _dhcpService.clearLeases();
+  void addStaticReservation(DhcpStaticReservation reservation) {
+    final normMac = SharedDevice.normalizeMac(reservation.macAddress);
+    final updatedList = List<DhcpStaticReservation>.from(_dhcpService.config.staticReservations)
+      ..removeWhere((r) => SharedDevice.normalizeMac(r.macAddress) == normMac)
+      ..add(reservation.copyWith(macAddress: normMac));
+    _dhcpService.updateConfig(_dhcpService.config.copyWith(staticReservations: updatedList));
+  }
+  void removeStaticReservation(String macAddress) {
+    final normMac = SharedDevice.normalizeMac(macAddress);
+    final updatedList = List<DhcpStaticReservation>.from(_dhcpService.config.staticReservations)
+      ..removeWhere((r) => SharedDevice.normalizeMac(r.macAddress) == normMac);
+    _dhcpService.updateConfig(_dhcpService.config.copyWith(staticReservations: updatedList));
+  }
 
   // Wake-on-LAN Operations
   Future<void> loadWolDevices() async {

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.5.0+1
+version: 0.6.0+1
 
 environment:
   sdk: ^3.13.3
@@ -36,6 +36,12 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.5+1
   intl: ^0.20.2
+  network_suite_shared:
+    git:
+      url: https://github.com/Tom-McGuire/network-suite-shared.git
+      ref: main
+  sqlite3: ^3.7.1
+  sqlite3_flutter_libs: ^0.6.0+eol
 
 dev_dependencies:
   flutter_test:

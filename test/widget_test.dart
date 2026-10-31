@@ -79,4 +79,41 @@ void main() {
     final maximizedSize = tester.getSize(find.byType(LogDetailPanel));
     expect(maximizedSize.height, greaterThan(500.0));
   });
+
+  testWidgets('DHCP Service Panel renders sub-tabs and Static Reservations section', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const NetworkServicesApp());
+    await tester.pumpAndSettle();
+
+    // Verify Active Leases and Static Reservations sub-tabs
+    expect(find.textContaining('Active Leases'), findsOneWidget);
+    expect(find.textContaining('Static Reservations'), findsOneWidget);
+
+    // Switch to Static Reservations tab
+    await tester.tap(find.textContaining('Static Reservations'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Configured Static IP Reservations'), findsOneWidget);
+    expect(find.text('Add Reservation'), findsOneWidget);
+  });
+
+  testWidgets('Wake-on-LAN panel renders Import from Shared Devices button', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const NetworkServicesApp());
+    await tester.pumpAndSettle();
+
+    // Switch to WOL tab
+    await tester.tap(find.text('Wake-on-LAN'));
+    await tester.pumpAndSettle();
+
+    // Verify presence of "Import from Shared Devices" button
+    expect(find.text('Import from Shared Devices'), findsWidgets);
+    expect(find.text('Add Device'), findsOneWidget);
+  });
 }

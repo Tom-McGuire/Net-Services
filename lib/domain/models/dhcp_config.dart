@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:network_suite_shared/network_suite_shared.dart';
+import 'dhcp_static_reservation.dart';
 
 class DhcpConfig {
   final String startIp;
@@ -8,6 +10,7 @@ class DhcpConfig {
   final String dnsServerIp;
   final int leaseTimeSeconds;
   final bool useLocalDns;
+  final List<DhcpStaticReservation> staticReservations;
 
   static const DhcpConfig defaultConfig = DhcpConfig(
     startIp: '192.168.1.100',
@@ -17,6 +20,7 @@ class DhcpConfig {
     dnsServerIp: '192.168.1.1',
     leaseTimeSeconds: 86400,
     useLocalDns: false,
+    staticReservations: [],
   );
 
   const DhcpConfig({
@@ -27,6 +31,7 @@ class DhcpConfig {
     required this.dnsServerIp,
     this.leaseTimeSeconds = 86400, // 24 hours
     this.useLocalDns = false,
+    this.staticReservations = const [],
   });
 
   /// Dynamically computes the last address based on startIp and poolSize.
@@ -46,6 +51,7 @@ class DhcpConfig {
     String? dnsServerIp,
     int? leaseTimeSeconds,
     bool? useLocalDns,
+    List<DhcpStaticReservation>? staticReservations,
   }) {
     return DhcpConfig(
       startIp: startIp ?? this.startIp,
@@ -55,6 +61,7 @@ class DhcpConfig {
       dnsServerIp: dnsServerIp ?? this.dnsServerIp,
       leaseTimeSeconds: leaseTimeSeconds ?? this.leaseTimeSeconds,
       useLocalDns: useLocalDns ?? this.useLocalDns,
+      staticReservations: staticReservations ?? this.staticReservations,
     );
   }
 
@@ -127,6 +134,30 @@ class DhcpConfig {
         // Check gateway collision
         if (gatewayNum >= startNum && gatewayNum <= endNum) {
           errors.add('IP pool contains the gateway IP address ($gatewayIp).');
+        }
+
+        // Validate static reservations within the subnet
+        final seenMacs = <String>{};
+        for (final res in staticReservations) {
+          final normalized = SharedDevice.normalizeMac(res.macAddress);
+          if (!SharedDevice.isValidMac(normalized)) {
+            errors.add('Static reservation MAC "${res.macAddress}" is invalid.');
+          } else if (!seenMacs.add(normalized)) {
+            errors.add('Duplicate static reservation for MAC "$normalized".');
+          }
+
+          final resIp = InternetAddress.tryParse(res.ipAddress);
+          if (resIp == null || resIp.type != InternetAddressType.IPv4) {
+            errors.add('Static reservation IP "${res.ipAddress}" is not a valid IPv4 address.');
+          } else {
+            final resNum = ipToNum(res.ipAddress);
+            if ((resNum & maskNum) != networkNum) {
+              errors.add('Static reservation IP ${res.ipAddress} is outside the configured subnet.');
+            }
+            if (resNum == gatewayNum) {
+              errors.add('Static reservation cannot use gateway IP ($gatewayIp).');
+            }
+          }
         }
       }
     }
