@@ -66,26 +66,26 @@ class DhcpConfig {
   }
 
   /// Validates the DHCP configuration and returns a list of error messages (empty if valid).
-  List<String> validate() {
+  List<String> validate({String? serverIp}) {
     final errors = <String>[];
 
     final startAddr = InternetAddress.tryParse(startIp);
-    if (startAddr == null || startAddr.type != InternetAddressType.IPv4) {
+    if (startAddr == null || startAddr.type != InternetAddressType.IPv4 || ipToNum(startIp) == 0) {
       errors.add('Start IP must be a valid IPv4 address.');
     }
 
     final maskAddr = InternetAddress.tryParse(subnetMask);
-    if (maskAddr == null || maskAddr.type != InternetAddressType.IPv4) {
+    if (maskAddr == null || maskAddr.type != InternetAddressType.IPv4 || ipToNum(subnetMask) == 0) {
       errors.add('Subnet mask must be a valid IPv4 address.');
     }
 
     final gatewayAddr = InternetAddress.tryParse(gatewayIp);
-    if (gatewayAddr == null || gatewayAddr.type != InternetAddressType.IPv4) {
+    if (gatewayAddr == null || gatewayAddr.type != InternetAddressType.IPv4 || ipToNum(gatewayIp) == 0) {
       errors.add('Gateway IP must be a valid IPv4 address.');
     }
 
     final dnsAddr = InternetAddress.tryParse(dnsServerIp);
-    if (dnsAddr == null || dnsAddr.type != InternetAddressType.IPv4) {
+    if (dnsAddr == null || dnsAddr.type != InternetAddressType.IPv4 || ipToNum(dnsServerIp) == 0) {
       errors.add('DNS Server IP must be a valid IPv4 address.');
     }
 
@@ -105,6 +105,9 @@ class DhcpConfig {
       final maskNum = ipToNum(subnetMask);
       final gatewayNum = ipToNum(gatewayIp);
       final endNum = startNum + poolSize - 1;
+      final serverNum = (serverIp != null && serverIp != '0.0.0.0' && serverIp != '127.0.0.1')
+          ? ipToNum(serverIp)
+          : 0;
 
       // Ensure subnet mask is contiguous
       if (!_isValidSubnetMask(maskNum)) {
@@ -138,6 +141,7 @@ class DhcpConfig {
 
         // Validate static reservations within the subnet
         final seenMacs = <String>{};
+        final seenIps = <String>{};
         for (final res in staticReservations) {
           final normalized = SharedDevice.normalizeMac(res.macAddress);
           if (!SharedDevice.isValidMac(normalized)) {
@@ -147,15 +151,24 @@ class DhcpConfig {
           }
 
           final resIp = InternetAddress.tryParse(res.ipAddress);
-          if (resIp == null || resIp.type != InternetAddressType.IPv4) {
+          final resNum = ipToNum(res.ipAddress);
+          if (resIp == null || resIp.type != InternetAddressType.IPv4 || resNum == 0) {
             errors.add('Static reservation IP "${res.ipAddress}" is not a valid IPv4 address.');
           } else {
-            final resNum = ipToNum(res.ipAddress);
+            if (!seenIps.add(res.ipAddress.trim())) {
+              errors.add('Duplicate static reservation IP "${res.ipAddress}".');
+            }
             if ((resNum & maskNum) != networkNum) {
               errors.add('Static reservation IP ${res.ipAddress} is outside the configured subnet.');
             }
+            if (resNum <= networkNum || resNum >= broadcastNum) {
+              errors.add('Static reservation IP ${res.ipAddress} cannot be the network or broadcast address.');
+            }
             if (resNum == gatewayNum) {
               errors.add('Static reservation cannot use gateway IP ($gatewayIp).');
+            }
+            if (serverNum != 0 && resNum == serverNum) {
+              errors.add('Static reservation cannot use host server IP ($serverIp).');
             }
           }
         }
@@ -165,6 +178,34 @@ class DhcpConfig {
     return errors;
   }
 
+  Map<String, dynamic> toJson() => {
+    'startIp': startIp,
+    'poolSize': poolSize,
+    'subnetMask': subnetMask,
+    'gatewayIp': gatewayIp,
+    'dnsServerIp': dnsServerIp,
+    'leaseTimeSeconds': leaseTimeSeconds,
+    'useLocalDns': useLocalDns,
+    'staticReservations': staticReservations.map((r) => r.toJson()).toList(),
+  };
+
+  factory DhcpConfig.fromJson(Map<String, dynamic> json) {
+    final rawReservations = json['staticReservations'] as List<dynamic>? ?? const [];
+    return DhcpConfig(
+      startIp: json['startIp'] as String? ?? defaultConfig.startIp,
+      poolSize: json['poolSize'] as int? ?? defaultConfig.poolSize,
+      subnetMask: json['subnetMask'] as String? ?? defaultConfig.subnetMask,
+      gatewayIp: json['gatewayIp'] as String? ?? defaultConfig.gatewayIp,
+      dnsServerIp: json['dnsServerIp'] as String? ?? defaultConfig.dnsServerIp,
+      leaseTimeSeconds: json['leaseTimeSeconds'] as int? ?? defaultConfig.leaseTimeSeconds,
+      useLocalDns: json['useLocalDns'] as bool? ?? defaultConfig.useLocalDns,
+      staticReservations: rawReservations
+          .whereType<Map<String, dynamic>>()
+          .map(DhcpStaticReservation.fromJson)
+          .toList(),
+    );
+  }
+
   static bool _isValidSubnetMask(int mask) {
     if (mask == 0) return false;
     final inverted = (~mask) & 0xFFFFFFFF;
@@ -172,9 +213,15 @@ class DhcpConfig {
   }
 
   static int ipToNum(String ip) {
-    final parts = ip.split('.').map((s) => int.tryParse(s) ?? 0).toList();
-    if (parts.length != 4) return 0;
-    return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    final rawParts = ip.trim().split('.');
+    if (rawParts.length != 4) return 0;
+    final parts = <int>[];
+    for (final s in rawParts) {
+      final v = int.tryParse(s);
+      if (v == null || v < 0 || v > 255) return 0;
+      parts.add(v);
+    }
+    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) & 0xFFFFFFFF;
   }
 
   static String numToIp(int num) {
@@ -184,4 +231,42 @@ class DhcpConfig {
     final o4 = num & 0xFF;
     return '$o1.$o2.$o3.$o4';
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! DhcpConfig) return false;
+    if (startIp != other.startIp ||
+        poolSize != other.poolSize ||
+        subnetMask != other.subnetMask ||
+        gatewayIp != other.gatewayIp ||
+        dnsServerIp != other.dnsServerIp ||
+        leaseTimeSeconds != other.leaseTimeSeconds ||
+        useLocalDns != other.useLocalDns ||
+        staticReservations.length != other.staticReservations.length) {
+      return false;
+    }
+    for (int i = 0; i < staticReservations.length; i++) {
+      final a = staticReservations[i];
+      final b = other.staticReservations[i];
+      if (a.macAddress.toUpperCase() != b.macAddress.toUpperCase() ||
+          a.ipAddress != b.ipAddress ||
+          a.deviceName != b.deviceName) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        startIp,
+        poolSize,
+        subnetMask,
+        gatewayIp,
+        dnsServerIp,
+        leaseTimeSeconds,
+        useLocalDns,
+        staticReservations.length,
+      );
 }

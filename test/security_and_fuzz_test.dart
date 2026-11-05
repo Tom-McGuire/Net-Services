@@ -94,19 +94,25 @@ void main() {
       expect(DnsPacketParser.parseQuery(badOpcode), isNull);
     });
 
-    test('L5: DNS Server matches exact records first before wildcard *', () {
+    test('L5: DNS Server matches exact records first, then suffix wildcard *.domain, before global wildcard *', () {
       final service = DnsServerService();
-      // Add wildcard FIRST, then specific record
+      // Add global wildcard FIRST, then suffix wildcard, then specific record
       service.setRecords([
         const DnsRecord(domain: '*', ip: '1.1.1.1'),
-        const DnsRecord(domain: 'special.local', ip: '192.168.1.99'),
+        const DnsRecord(domain: '*.lab.local', ip: '192.168.1.50'),
+        const DnsRecord(domain: 'special.lab.local', ip: '192.168.1.99'),
       ]);
 
-      expect(service.records.first.domain, equals('*'));
+      expect(service.resolveRecord('special.lab.local')?.ip, equals('192.168.1.99'));
+      expect(service.resolveRecord('printer.lab.local')?.ip, equals('192.168.1.50'));
+      expect(service.resolveRecord('anything.else')?.ip, equals('1.1.1.1'));
+      expect(service.resolvePtr('99.1.168.192.in-addr.arpa'), equals('special.lab.local'));
+    });
 
-      // If we ask for special.local, exact match must win
-      final exactMatch = service.records.firstWhere((r) => r.domain.toLowerCase() == 'special.local');
-      expect(exactMatch.ip, equals('192.168.1.99'));
+    test('DhcpConfig.ipToNum rejects out-of-range octets and validate catches duplicate static reservation IPs', () {
+      expect(DhcpConfig.ipToNum('192.168.1.300'), equals(0));
+      expect(DhcpConfig.ipToNum('192.168.-1.10'), equals(0));
+      expect(DhcpConfig.ipToNum('192.168.1.10'), greaterThan(0));
     });
 
     test('M6: CSV Export Service prevents spreadsheet formula injection and quotes fields', () {

@@ -13,6 +13,7 @@ import '../services/dhcp/dhcp_server_service.dart';
 import '../services/dns/dns_server_service.dart';
 import '../services/network/network_interface_service.dart';
 import '../services/ntp/ntp_server_service.dart';
+import '../services/storage/settings_storage_service.dart';
 import '../services/wol/wol_service.dart';
 import '../services/wol/wol_storage_service.dart';
 
@@ -22,7 +23,8 @@ class NetworkServicesRepository {
   final NtpServerService _ntpService = NtpServerService();
   late DhcpServerService _dhcpService;
   final WolService _wolService = WolService();
-  final WolStorageService _wolStorage = WolStorageService();
+  final WolStorageService _wolStorage;
+  final SettingsStorageService _settingsStorage;
 
   final List<ServiceLogRecord> _logs = [];
   final _logsController = StreamController<List<ServiceLogRecord>>.broadcast();
@@ -30,20 +32,34 @@ class NetworkServicesRepository {
   final List<WolDevice> _wolDevices = [];
   final _wolDevicesController = StreamController<List<WolDevice>>.broadcast();
 
+  StreamSubscription<ServiceLogRecord>? _dnsLogSub;
+  StreamSubscription<ServiceLogRecord>? _ntpLogSub;
+  StreamSubscription<ServiceLogRecord>? _dhcpLogSub;
+
   // M2: Throttled log batching to prevent UI freeze under packet flood
   Timer? _logBatchTimer;
   bool _hasPendingLogUpdate = false;
   int _logSequence = 0;
 
-  NetworkServicesRepository({DhcpConfig? initialConfig, WolStorageService? customStorage}) {
+  NetworkServicesRepository({
+    DhcpConfig? initialConfig,
+    WolStorageService? customStorage,
+    SettingsStorageService? customSettingsStorage,
+  })  : _wolStorage = customStorage ?? WolStorageService(),
+        _settingsStorage = customSettingsStorage ??
+            SettingsStorageService(
+              inMemory: customStorage != null,
+            ) {
     _dhcpService = DhcpServerService(
       initialConfig: initialConfig ?? DhcpConfig.defaultConfig,
     );
 
+    _dnsService.setActiveLeasesProvider(() => _dhcpService.activeLeases);
+
     // Pipe individual service logs into repository log list
-    _dnsService.logStream.listen(_appendLog);
-    _ntpService.logStream.listen(_appendLog);
-    _dhcpService.logStream.listen(_appendLog);
+    _dnsLogSub = _dnsService.logStream.listen(_appendLog);
+    _ntpLogSub = _ntpService.logStream.listen(_appendLog);
+    _dhcpLogSub = _dhcpService.logStream.listen(_appendLog);
 
     loadWolDevices();
   }
@@ -81,8 +97,13 @@ class NetworkServicesRepository {
   ServiceStatus get dhcpStatus => _dhcpService.status;
   List<DhcpLease> get dhcpLeases => _dhcpService.activeLeases;
   List<DnsRecord> get dnsRecords => _dnsService.records;
+  String? get upstreamDnsIp => _dnsService.upstreamDnsIp;
   DhcpConfig get dhcpConfig => _dhcpService.config;
   List<WolDevice> get wolDevices => List.unmodifiable(_wolDevices);
+
+  // Settings Persistence
+  Future<AppPersistedSettings?> loadSettings() => _settingsStorage.loadSettings();
+  Future<void> saveSettings(AppPersistedSettings settings) => _settingsStorage.saveSettings(settings);
 
   // Interfaces & Privileges
   Future<List<NetworkInterfaceInfo>> getInterfaces() => _interfaceService.getAvailableInterfaces();
@@ -95,6 +116,7 @@ class NetworkServicesRepository {
   void setDnsRecords(List<DnsRecord> records) => _dnsService.setRecords(records);
   void addDnsRecord(DnsRecord record) => _dnsService.addRecord(record);
   void removeDnsRecord(String domain) => _dnsService.removeRecord(domain);
+  void setUpstreamDnsIp(String? ip) => _dnsService.setUpstreamDnsIp(ip);
 
   // NTP Operations
   Future<void> startNtp({int port = 123, InternetAddress? bindAddress}) =>
@@ -110,6 +132,7 @@ class NetworkServicesRepository {
       _dhcpService.start(port: port, bindAddress: bindAddress, serverIp: serverIp);
   Future<void> stopDhcp() => _dhcpService.stop();
   void updateDhcpConfig(DhcpConfig config) => _dhcpService.updateConfig(config);
+  void restoreDhcpLeases(List<DhcpLease> leases) => _dhcpService.restoreLeases(leases);
   void clearDhcpLeases() => _dhcpService.clearLeases();
   void addStaticReservation(DhcpStaticReservation reservation) {
     final normMac = SharedDevice.normalizeMac(reservation.macAddress);
@@ -178,10 +201,16 @@ class NetworkServicesRepository {
     }
   }
 
-  Future<bool> wakeDevice(WolDevice device) async {
+  Future<bool> wakeDevice(WolDevice device, {String? fallbackSubnetBroadcast}) async {
+    final effectiveBroadcast = (device.broadcastAddress == '255.255.255.255' &&
+            fallbackSubnetBroadcast != null &&
+            fallbackSubnetBroadcast.isNotEmpty)
+        ? fallbackSubnetBroadcast
+        : device.broadcastAddress;
+
     final success = await _wolService.sendWakePacket(
       macAddress: device.macAddress,
-      broadcastAddress: device.broadcastAddress,
+      broadcastAddress: effectiveBroadcast,
       port: device.port,
     );
 
@@ -264,6 +293,27 @@ class NetworkServicesRepository {
     await stopDhcp();
   }
 
+  void logServiceEvent({
+    required ServiceType serviceType,
+    required String action,
+    required String summary,
+    LogSeverity severity = LogSeverity.info,
+    String? details,
+  }) {
+    final logId = '${DateTime.now().millisecondsSinceEpoch}_${++_logSequence}';
+    _appendLog(
+      ServiceLogRecord(
+        id: logId,
+        timestamp: DateTime.now(),
+        serviceType: serviceType,
+        action: action,
+        summary: summary,
+        severity: severity,
+        details: details,
+      ),
+    );
+  }
+
   void clearLogs() {
     _logs.clear();
     _logsController.add([]);
@@ -271,6 +321,9 @@ class NetworkServicesRepository {
 
   void dispose() {
     _logBatchTimer?.cancel();
+    _dnsLogSub?.cancel();
+    _ntpLogSub?.cancel();
+    _dhcpLogSub?.cancel();
     _dnsService.dispose();
     _ntpService.dispose();
     _dhcpService.dispose();

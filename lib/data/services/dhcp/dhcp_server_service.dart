@@ -33,6 +33,20 @@ class DhcpServerService {
 
   void updateConfig(DhcpConfig config) {
     _leaseManager.updateConfig(config);
+    _leasesController.add(_leaseManager.activeLeases);
+  }
+
+  void restoreLeases(List<DhcpLease> leases) {
+    _leaseManager.restoreLeases(leases);
+    _leasesController.add(_leaseManager.activeLeases);
+  }
+
+  String get _subnetBroadcastIp {
+    final startNum = DhcpConfig.ipToNum(config.startIp);
+    final maskNum = DhcpConfig.ipToNum(config.subnetMask);
+    if (startNum == 0 || maskNum == 0) return '255.255.255.255';
+    final broadcastNum = (startNum & maskNum) | (~maskNum & 0xFFFFFFFF);
+    return DhcpConfig.numToIp(broadcastNum);
   }
 
   Future<void> start({
@@ -110,7 +124,26 @@ class DhcpServerService {
   void _handlePacket(Datagram datagram) {
     try {
       final packet = DhcpPacketParser.parse(datagram.data);
-      if (packet == null || packet.op != 1) return;
+      if (packet == null) return;
+
+      if (packet.op == 2) {
+        final senderIp = datagram.address.address;
+        if (senderIp != _serverIp && senderIp != '127.0.0.1' && packet.serverIdentifier != _serverIp) {
+          _emitLog(
+            action: 'ROGUE_DHCP',
+            summary: 'Detected DHCP reply (${packet.messageType.name.toUpperCase()}) from another server at $senderIp',
+            clientAddress: senderIp,
+            severity: LogSeverity.warning,
+            details: 'Sender IP: $senderIp\n'
+                'Server Identifier (Option 54): ${packet.serverIdentifier ?? "None"}\n'
+                'Offered IP (yiaddr): ${packet.yiaddr}\n'
+                'Target Client MAC: ${packet.chaddrMac}',
+          );
+        }
+        return;
+      }
+
+      if (packet.op != 1) return;
 
       switch (packet.messageType) {
         case DhcpMessageType.discover:
@@ -124,6 +157,9 @@ class DhcpServerService {
           break;
         case DhcpMessageType.release:
           _handleRelease(packet);
+          break;
+        case DhcpMessageType.inform:
+          _handleInform(packet);
           break;
         default:
           break;
@@ -180,6 +216,8 @@ class DhcpServerService {
       routerIp: config.gatewayIp,
       dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
       leaseTimeSeconds: config.leaseTimeSeconds,
+      broadcastIp: _subnetBroadcastIp,
+      ntpServerIp: _serverIp != '0.0.0.0' ? _serverIp : null,
     );
 
     _sendReply(replyBytes);
@@ -193,10 +231,10 @@ class DhcpServerService {
   }
 
   void _handleRequest(DhcpPacket packet) {
-    // If client specified a Server Identifier (Option 54) and it's NOT us, ignore packet
-    if (packet.serverIdentifier != null &&
-        packet.serverIdentifier != '0.0.0.0' &&
-        packet.serverIdentifier != _serverIp) {
+    final hasServerId = packet.serverIdentifier != null && packet.serverIdentifier != '0.0.0.0';
+
+    // SELECTING state: if client specified a Server Identifier (Option 54) and it's NOT us, ignore packet
+    if (hasServerId && packet.serverIdentifier != _serverIp) {
       _emitLog(
         action: 'REQUEST_IGNORED',
         summary: 'DHCPREQUEST from ${packet.chaddrMac} for other server ${packet.serverIdentifier} ignored',
@@ -204,6 +242,28 @@ class DhcpServerService {
         severity: LogSeverity.info,
       );
       return;
+    }
+
+    final targetIp = packet.requestedIp ?? (packet.ciaddr != '0.0.0.0' ? packet.ciaddr : null);
+
+    // RFC 2131 §4.3.2 INIT-REBOOT / RENEWING / REBINDING without Option 54:
+    // If we have no record of the client and its requested IP is in our subnet without conflict,
+    // remain silent rather than sending a disruptive DHCPNAK.
+    if (!hasServerId) {
+      if (targetIp == null) return;
+      final inSubnet = _leaseManager.isIpInSubnet(targetIp);
+      final hasConflict = _leaseManager.isIpConflictingForMac(packet.chaddrMac, targetIp);
+      final hasRecord = _leaseManager.hasClientRecord(packet.chaddrMac);
+
+      if (inSubnet && !hasConflict && !hasRecord) {
+        _emitLog(
+          action: 'REQUEST_IGNORED',
+          summary: 'Unrecorded INIT-REBOOT/RENEW DHCPREQUEST from ${packet.chaddrMac} for $targetIp ignored (RFC 2131 §4.3.2)',
+          clientAddress: packet.chaddrMac,
+          severity: LogSeverity.info,
+        );
+        return;
+      }
     }
 
     // Inspect client MAC address in SharedDeviceDatabase or register new
@@ -216,8 +276,6 @@ class DhcpServerService {
         notes: 'Discovered by DHCPREQUEST',
       );
     }
-
-    final targetIp = packet.requestedIp ?? (packet.ciaddr != '0.0.0.0' ? packet.ciaddr : null);
 
     final lease = _leaseManager.confirmLease(
       packet.chaddrMac,
@@ -261,10 +319,13 @@ class DhcpServerService {
       routerIp: config.gatewayIp,
       dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
       leaseTimeSeconds: config.leaseTimeSeconds,
+      broadcastIp: _subnetBroadcastIp,
+      ntpServerIp: _serverIp != '0.0.0.0' ? _serverIp : null,
     );
 
-    // If client already has a valid IP (renewal), we can unicast; otherwise broadcast
-    final unicastTarget = (packet.ciaddr != '0.0.0.0') ? packet.ciaddr : null;
+    // Respect broadcast bit (0x8000); if clear and client already has a valid ciaddr, unicast
+    final broadcastFlagSet = (packet.flags & 0x8000) != 0;
+    final unicastTarget = (!broadcastFlagSet && packet.ciaddr != '0.0.0.0') ? packet.ciaddr : null;
     _sendReply(replyBytes, targetIp: unicastTarget);
 
     _leasesController.add(_leaseManager.activeLeases);
@@ -284,19 +345,62 @@ class DhcpServerService {
     );
   }
 
-  void _handleDecline(DhcpPacket packet) {
-    final declinedIp = packet.requestedIp ?? (packet.ciaddr != '0.0.0.0' ? packet.ciaddr : null);
-    if (declinedIp != null) {
-      _leaseManager.declineIp(declinedIp);
-      _leasesController.add(_leaseManager.activeLeases);
+  void _handleInform(DhcpPacket packet) {
+    final replyBytes = DhcpPacketParser.buildReply(
+      request: packet,
+      replyType: DhcpMessageType.ack,
+      offeredIp: '0.0.0.0',
+      serverIp: _serverIp,
+      subnetMask: config.subnetMask,
+      routerIp: config.gatewayIp,
+      dnsServerIp: config.useLocalDns ? _serverIp : config.dnsServerIp,
+      leaseTimeSeconds: 0,
+      includeLeaseTime: false,
+      broadcastIp: _subnetBroadcastIp,
+      ntpServerIp: _serverIp != '0.0.0.0' ? _serverIp : null,
+    );
 
+    final broadcastFlagSet = (packet.flags & 0x8000) != 0;
+    final unicastTarget = (!broadcastFlagSet && packet.ciaddr != '0.0.0.0') ? packet.ciaddr : null;
+    _sendReply(replyBytes, targetIp: unicastTarget);
+
+    _emitLog(
+      action: 'INFORM',
+      summary: 'DHCPINFORM from ${packet.chaddrMac} (${packet.ciaddr}) answered with stateless DHCPACK',
+      clientAddress: packet.chaddrMac,
+      severity: LogSeverity.info,
+    );
+  }
+
+  void _handleDecline(DhcpPacket packet) {
+    if (packet.serverIdentifier != null &&
+        packet.serverIdentifier != '0.0.0.0' &&
+        packet.serverIdentifier != _serverIp) {
+      return;
+    }
+
+    final declinedIp = packet.requestedIp ?? (packet.ciaddr != '0.0.0.0' ? packet.ciaddr : null);
+    if (declinedIp == null) return;
+
+    if (!_leaseManager.isIpHeldOrOfferedToMac(packet.chaddrMac, declinedIp)) {
       _emitLog(
-        action: 'DECLINE',
-        summary: 'DHCPDECLINE received from ${packet.chaddrMac} for $declinedIp (quarantined)',
+        action: 'DECLINE_IGNORED',
+        summary: 'Ignored unverified DHCPDECLINE from ${packet.chaddrMac} for $declinedIp (not leased/offered to this MAC)',
         clientAddress: packet.chaddrMac,
         severity: LogSeverity.warning,
       );
+      return;
     }
+
+    _leaseManager.declineIp(declinedIp);
+    _leasesController.add(_leaseManager.activeLeases);
+
+    _emitLog(
+      action: 'DECLINE',
+      summary: 'DHCPDECLINE received from ${packet.chaddrMac} for $declinedIp (quarantined for 10m)',
+      clientAddress: packet.chaddrMac,
+      severity: LogSeverity.warning,
+    );
   }
 
   void _handleRelease(DhcpPacket packet) {
@@ -313,20 +417,36 @@ class DhcpServerService {
   }
 
   void _sendReply(List<int> bytes, {String? targetIp}) {
-    try {
-      if (targetIp != null && targetIp != '0.0.0.0') {
-        _socket?.send(bytes, InternetAddress(targetIp), 68);
-        return;
-      }
-    } catch (_) {}
+    if (_socket == null) return;
 
-    // Send to broadcast 255.255.255.255 on port 68
-    try {
-      _socket?.send(bytes, InternetAddress('255.255.255.255'), 68);
-    } catch (_) {
+    if (targetIp != null && targetIp != '0.0.0.0') {
       try {
-        _socket?.send(bytes, InternetAddress('127.0.0.1'), 68);
+        final sent = _socket!.send(bytes, InternetAddress(targetIp), 68);
+        if (sent > 0) return;
       } catch (_) {}
+    }
+
+    // Try directed subnet broadcast first, then limited broadcast 255.255.255.255 on port 68
+    bool sentAny = false;
+    final subnetBroadcast = _subnetBroadcastIp;
+    if (subnetBroadcast != '255.255.255.255') {
+      try {
+        final sent = _socket!.send(bytes, InternetAddress(subnetBroadcast), 68);
+        if (sent > 0) sentAny = true;
+      } catch (_) {}
+    }
+
+    try {
+      final sent = _socket!.send(bytes, InternetAddress('255.255.255.255'), 68);
+      if (sent > 0) sentAny = true;
+    } catch (e) {
+      if (!sentAny) {
+        _emitLog(
+          action: 'SEND_ERROR',
+          summary: 'Failed to broadcast DHCP reply on port 68: $e',
+          severity: LogSeverity.error,
+        );
+      }
     }
   }
 

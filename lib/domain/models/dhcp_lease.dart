@@ -50,4 +50,24 @@ class DhcpLease {
       isStatic: isStatic ?? this.isStatic,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'macAddress': macAddress,
+    'ipAddress': ipAddress,
+    'hostname': hostname,
+    'leaseStart': leaseStart.toIso8601String(),
+    'leaseDurationSeconds': leaseDurationSeconds,
+    'friendlyName': friendlyName,
+    'isStatic': isStatic,
+  };
+
+  factory DhcpLease.fromJson(Map<String, dynamic> json) => DhcpLease(
+    macAddress: json['macAddress'] as String? ?? '',
+    ipAddress: json['ipAddress'] as String? ?? '',
+    hostname: json['hostname'] as String? ?? '',
+    leaseStart: DateTime.tryParse(json['leaseStart'] as String? ?? '') ?? DateTime.now(),
+    leaseDurationSeconds: json['leaseDurationSeconds'] as int? ?? 86400,
+    friendlyName: json['friendlyName'] as String?,
+    isStatic: json['isStatic'] as bool? ?? false,
+  );
 }

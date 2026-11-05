@@ -3,13 +3,27 @@ class NetworkInterfaceInfo {
   final String ip;
   final String subnetMask;
   final int prefixLength;
+  final String? defaultGateway;
 
   const NetworkInterfaceInfo({
     required this.name,
     required this.ip,
     required this.subnetMask,
     required this.prefixLength,
+    this.defaultGateway,
   });
+
+  /// Calculates the subnet broadcast address (e.g. 192.168.1.255 for /24).
+  String get broadcastAddress {
+    final ipParts = ip.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    final maskParts = subnetMask.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    if (ipParts.length != 4 || maskParts.length != 4) return '255.255.255.255';
+    final b0 = (ipParts[0] & maskParts[0]) | (~maskParts[0] & 0xFF);
+    final b1 = (ipParts[1] & maskParts[1]) | (~maskParts[1] & 0xFF);
+    final b2 = (ipParts[2] & maskParts[2]) | (~maskParts[2] & 0xFF);
+    final b3 = (ipParts[3] & maskParts[3]) | (~maskParts[3] & 0xFF);
+    return '$b0.$b1.$b2.$b3';
+  }
 
   /// Calculates the next sequential IP address (Host IP + 1).
   String get hostIpPlusOne {

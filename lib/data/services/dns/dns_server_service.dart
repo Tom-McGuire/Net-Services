@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+import '../../../domain/models/dhcp_lease.dart';
 import '../../../domain/models/dns_record.dart';
 import '../../../domain/models/service_log_record.dart';
 import '../../../domain/models/service_status.dart';
@@ -9,6 +11,8 @@ class DnsServerService {
   RawDatagramSocket? _socket;
   ServiceStatus _status = const ServiceStatus(port: 53);
   final List<DnsRecord> _records = [];
+  String? _upstreamDnsIp;
+  List<DhcpLease> Function()? _activeLeasesProvider;
   int _logSequence = 0;
 
   final _logController = StreamController<ServiceLogRecord>.broadcast();
@@ -18,6 +22,16 @@ class DnsServerService {
   Stream<ServiceStatus> get statusStream => _statusController.stream;
   ServiceStatus get status => _status;
   List<DnsRecord> get records => List.unmodifiable(_records);
+  String? get upstreamDnsIp => _upstreamDnsIp;
+
+  void setUpstreamDnsIp(String? ip) {
+    final trimmed = ip?.trim();
+    _upstreamDnsIp = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+  }
+
+  void setActiveLeasesProvider(List<DhcpLease> Function()? provider) {
+    _activeLeasesProvider = provider;
+  }
 
   void setRecords(List<DnsRecord> records) {
     _records.clear();
@@ -31,6 +45,83 @@ class DnsServerService {
 
   void removeRecord(String domain) {
     _records.removeWhere((r) => r.domain.toLowerCase() == domain.toLowerCase());
+  }
+
+  /// Resolves a domain against local records (exact -> suffix wildcard `*.domain` -> DHCP leases -> global `*`).
+  DnsRecord? resolveRecord(String rawDomain) {
+    final domain = rawDomain.toLowerCase();
+
+    // 1. Exact match
+    for (final r in _records) {
+      if (r.domain.toLowerCase() == domain) {
+        return r;
+      }
+    }
+
+    // 2. Suffix wildcard match (e.g. *.lab.local matches host.lab.local or a.b.lab.local)
+    DnsRecord? bestSuffixMatch;
+    int bestSuffixLength = -1;
+    for (final r in _records) {
+      final pat = r.domain.toLowerCase();
+      if (pat.startsWith('*.') && pat.length > 2) {
+        final suffix = pat.substring(1); // '.lab.local'
+        if (domain.endsWith(suffix) && domain.length > suffix.length) {
+          if (suffix.length > bestSuffixLength) {
+            bestSuffixLength = suffix.length;
+            bestSuffixMatch = r;
+          }
+        }
+      }
+    }
+    if (bestSuffixMatch != null) return bestSuffixMatch;
+
+    // 3. Active DHCP leases (hostname or hostname.local)
+    final leases = _activeLeasesProvider?.call() ?? const [];
+    for (final lease in leases) {
+      final host = lease.hostname.trim().toLowerCase();
+      if (host.isNotEmpty && host != 'unknown') {
+        if (domain == host || domain == '$host.local' || domain == '$host.lan') {
+          return DnsRecord(domain: domain, ip: lease.ipAddress, ttl: 60);
+        }
+      }
+    }
+
+    // 4. Global wildcard '*'
+    for (final r in _records) {
+      if (r.domain == '*') {
+        return r;
+      }
+    }
+
+    return null;
+  }
+
+  /// Resolves a reverse DNS PTR query (e.g. `100.1.168.192.in-addr.arpa`) against local records and DHCP leases.
+  String? resolvePtr(String rawDomain) {
+    final lower = rawDomain.toLowerCase();
+    const suffix = '.in-addr.arpa';
+    if (!lower.endsWith(suffix)) return null;
+    final prefix = lower.substring(0, lower.length - suffix.length);
+    final parts = prefix.split('.');
+    if (parts.length != 4) return null;
+    final reversedIp = '${parts[3]}.${parts[2]}.${parts[1]}.${parts[0]}';
+
+    for (final r in _records) {
+      if (r.ip == reversedIp && !r.domain.contains('*')) {
+        return r.domain;
+      }
+    }
+
+    final leases = _activeLeasesProvider?.call() ?? const [];
+    for (final lease in leases) {
+      if (lease.ipAddress == reversedIp) {
+        final host = lease.hostname.trim();
+        if (host.isNotEmpty && host.toLowerCase() != 'unknown') {
+          return host.contains('.') ? host : '$host.local';
+        }
+      }
+    }
+    return null;
   }
 
   Future<void> start({int port = 53, InternetAddress? bindAddress}) async {
@@ -103,24 +194,44 @@ class DnsServerService {
       if (query == null) return;
 
       final domain = query.domain.toLowerCase();
+      final isPtrQuery = query.qType == 12;
 
-      // L5: Exact match first, then fallback to wildcard '*'
-      DnsRecord? record = _records.cast<DnsRecord?>().firstWhere(
-            (r) => r?.domain.toLowerCase() == domain,
-            orElse: () => null,
+      if (isPtrQuery) {
+        final ptrTarget = resolvePtr(domain);
+        if (ptrTarget != null) {
+          final responseBytes = DnsPacketParser.buildResponse(
+            query: query,
+            resolvedIp: null,
+            resolvedPtrDomain: ptrTarget,
+            isDomainKnown: true,
+            recursionAvailable: _upstreamDnsIp != null,
           );
-      record ??= _records.cast<DnsRecord?>().firstWhere(
-            (r) => r?.domain == '*',
-            orElse: () => null,
+          _socket?.send(responseBytes, datagram.address, datagram.port);
+          _emitLog(
+            action: 'RESOLVED',
+            summary: 'PTR Query "$domain" from ${datagram.address.address} -> $ptrTarget',
+            clientAddress: '${datagram.address.address}:${datagram.port}',
+            severity: LogSeverity.info,
           );
+          return;
+        }
+      }
 
+      final record = resolveRecord(domain);
       final isKnown = record != null;
       final resolvedIp = record?.ip;
+
+      // If not matched locally (or if matched locally but for a non-A record type when upstream is enabled)
+      if (!isKnown && _upstreamDnsIp != null && _upstreamDnsIp!.isNotEmpty) {
+        _forwardToUpstream(datagram, query, _upstreamDnsIp!);
+        return;
+      }
 
       final responseBytes = DnsPacketParser.buildResponse(
         query: query,
         resolvedIp: resolvedIp,
         isDomainKnown: isKnown,
+        recursionAvailable: _upstreamDnsIp != null,
         ttl: record?.ttl ?? 300,
       );
 
@@ -148,6 +259,75 @@ class DnsServerService {
         summary: 'Malformed DNS packet from ${datagram.address.address}: $e',
         severity: LogSeverity.warning,
       );
+    }
+  }
+
+  Future<void> _forwardToUpstream(
+    Datagram clientDatagram,
+    DnsQuery query,
+    String upstreamIp,
+  ) async {
+    RawDatagramSocket? relaySocket;
+    try {
+      final upstreamAddr = InternetAddress.tryParse(upstreamIp);
+      if (upstreamAddr == null) return;
+
+      relaySocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final completer = Completer<Uint8List?>();
+
+      relaySocket.listen(
+        (event) {
+          if (event == RawSocketEvent.read && !completer.isCompleted) {
+            final reply = relaySocket?.receive();
+            if (reply != null && reply.data.length >= 12) {
+              completer.complete(reply.data);
+            }
+          }
+        },
+        onError: (_) {
+          if (!completer.isCompleted) completer.complete(null);
+        },
+      );
+
+      relaySocket.send(clientDatagram.data, upstreamAddr, 53);
+
+      final upstreamResponse = await completer.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => null,
+      );
+
+      if (upstreamResponse != null && _socket != null) {
+        _socket?.send(upstreamResponse, clientDatagram.address, clientDatagram.port);
+        _emitLog(
+          action: 'FORWARDED',
+          summary: 'Forwarded "${query.domain}" (Type ${query.qType}) for ${clientDatagram.address.address} via $upstreamIp',
+          clientAddress: '${clientDatagram.address.address}:${clientDatagram.port}',
+          severity: LogSeverity.info,
+        );
+      } else {
+        // Fallback to NXDOMAIN on upstream timeout
+        final fallback = DnsPacketParser.buildResponse(
+          query: query,
+          resolvedIp: null,
+          isDomainKnown: false,
+          recursionAvailable: true,
+        );
+        _socket?.send(fallback, clientDatagram.address, clientDatagram.port);
+        _emitLog(
+          action: 'UPSTREAM_TIMEOUT',
+          summary: 'Upstream DNS $upstreamIp timed out for "${query.domain}"',
+          clientAddress: '${clientDatagram.address.address}:${clientDatagram.port}',
+          severity: LogSeverity.warning,
+        );
+      }
+    } catch (e) {
+      _emitLog(
+        action: 'UPSTREAM_ERROR',
+        summary: 'Failed to forward "${query.domain}" to $upstreamIp: $e',
+        severity: LogSeverity.warning,
+      );
+    } finally {
+      relaySocket?.close();
     }
   }
 

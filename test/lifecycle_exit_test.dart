@@ -1,12 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:net_services/data/repositories/network_services_repository.dart';
+import 'package:net_services/data/services/wol/wol_storage_service.dart';
 import 'package:net_services/domain/models/service_status.dart';
 import 'package:net_services/ui/features/dashboard/view_models/network_services_view_model.dart';
 
 void main() {
   group('Lifecycle and Shutdown Verification Tests', () {
     test('stopAll cleanly shuts down all services', () async {
-      final repository = NetworkServicesRepository();
+      final repository = NetworkServicesRepository(
+        customStorage: WolStorageService(inMemory: true),
+      );
       final vm = NetworkServicesViewModel(repository: repository);
 
       // Start all on unprivileged non-conflicting test ports (avoiding 5353 mDNS conflict)

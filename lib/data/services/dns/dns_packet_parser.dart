@@ -61,10 +61,9 @@ class DnsPacketParser {
       }
 
       final rawLabel = String.fromCharCodes(data.sublist(offset, offset + len));
-      // M5: Sanitize label
-      final sanitized = _sanitizeDnsLabel(rawLabel);
-      if (sanitized.isEmpty && rawLabel.isNotEmpty) return null;
-      labels.add(sanitized);
+      // M5: Validate label strictly (do not strip invalid chars silently)
+      if (!_isValidDnsLabel(rawLabel)) return null;
+      labels.add(rawLabel);
       offset += len;
     }
 
@@ -87,17 +86,37 @@ class DnsPacketParser {
     );
   }
 
-  static String _sanitizeDnsLabel(String label) {
-    return label.replaceAll(RegExp(r'[^a-zA-Z0-9\-_*]'), '');
+  static final RegExp _validLabelRegex = RegExp(r'^[a-zA-Z0-9\-_*]+$');
+
+  static bool _isValidDnsLabel(String label) {
+    if (label.isEmpty || label.length > 63) return false;
+    return _validLabelRegex.hasMatch(label);
+  }
+
+  /// Encodes a domain name into DNS wire format (sequence of length-prefixed labels terminated by 0).
+  static Uint8List encodeDomainName(String domain) {
+    final builder = BytesBuilder();
+    final parts = domain.trim().split('.').where((p) => p.isNotEmpty);
+    for (final part in parts) {
+      final bytes = part.codeUnits;
+      final len = bytes.length > 63 ? 63 : bytes.length;
+      builder.addByte(len);
+      builder.add(bytes.take(len).toList());
+    }
+    builder.addByte(0);
+    return builder.toBytes();
   }
 
   /// Builds a DNS response packet.
   /// [resolvedIp]: The IPv4 address if matching A record found, or null.
+  /// [resolvedPtrDomain]: The target domain name if matching PTR record found, or null.
   /// [isDomainKnown]: True if the domain exists in our zone (even if query was for non-A type).
   static Uint8List buildResponse({
     required DnsQuery query,
     required String? resolvedIp,
+    String? resolvedPtrDomain,
     bool isDomainKnown = false,
+    bool recursionAvailable = false,
     int ttl = 300,
   }) {
     final builder = BytesBuilder();
@@ -112,19 +131,29 @@ class DnsPacketParser {
     // Bit 15: QR = 1 (Response)
     // Bit 10: AA = 1 (Authoritative Answer, this server is authoritative for configured records)
     // Bit 8: RD = Echo client's Recursion Desired
-    // Bit 7: RA = 0 (Recursion NOT available on this server)
+    // Bit 7: RA = Recursion Available if upstream forwarder is configured
     // Bits 0-3: RCODE (0 = NOERROR, 3 = NXDOMAIN)
-    int responseFlags = 0x8400; // QR=1, AA=1, RA=0
+    int responseFlags = 0x8400; // QR=1, AA=1
     if (query.recursionDesired) {
       responseFlags |= 0x0100; // Echo RD
     }
+    if (recursionAvailable) {
+      responseFlags |= 0x0080; // Set RA
+    }
 
-    final bool hasAnswer = (resolvedIp != null && (query.qType == 1 || query.qType == 255));
-    if (!hasAnswer && !isDomainKnown) {
+    final bool isInternetClass = (query.qClass == 1 || query.qClass == 255);
+    final bool hasAAnswer = isInternetClass && resolvedIp != null && (query.qType == 1 || query.qType == 255);
+    final bool hasPtrAnswer = isInternetClass && resolvedPtrDomain != null && (query.qType == 12 || query.qType == 255);
+    final bool hasAnswer = hasAAnswer || hasPtrAnswer;
+
+    if (!isInternetClass) {
+      // Refused / Not Implemented for non-IN class, or NXDOMAIN
+      responseFlags |= 0x0004; // NOTIMP
+    } else if (!hasAnswer && !isDomainKnown) {
       // Domain does not exist: RCODE = 3 (NXDOMAIN)
       responseFlags |= 0x0003;
     } else {
-      // Domain exists (either with A answer or NODATA for other types): RCODE = 0 (NOERROR)
+      // Domain exists (either with answer or NODATA for other types): RCODE = 0 (NOERROR)
       responseFlags |= 0x0000;
     }
 
@@ -133,7 +162,7 @@ class DnsPacketParser {
     // 3. QDCOUNT (1)
     builder.add([0x00, 0x01]);
 
-    // 4. ANCOUNT (1 if A record answer included, 0 if NODATA / NXDOMAIN)
+    // 4. ANCOUNT (1 if answer included, 0 if NODATA / NXDOMAIN)
     builder.add([0x00, hasAnswer ? 0x01 : 0x00]);
 
     // 5. NSCOUNT (0)
@@ -145,8 +174,8 @@ class DnsPacketParser {
     // 7. Question Section (verbatim from query)
     builder.add(query.rawQuestionBytes);
 
-    // 8. Answer Section (if A record found and requested)
-    if (hasAnswer) {
+    // 8. Answer Section
+    if (hasAAnswer) {
       // Name pointer to offset 12 (0xC00C)
       builder.add([0xC0, 0x0C]);
 
@@ -173,6 +202,30 @@ class DnsPacketParser {
         octets.add(0);
       }
       builder.add(octets.take(4).toList());
+    } else if (hasPtrAnswer) {
+      // Name pointer to offset 12 (0xC00C)
+      builder.add([0xC0, 0x0C]);
+
+      // Type 12 (PTR Record)
+      builder.add([0x00, 0x0C]);
+
+      // Class 1 (IN)
+      builder.add([0x00, 0x01]);
+
+      // TTL (32 bits)
+      builder.add([
+        (ttl >> 24) & 0xFF,
+        (ttl >> 16) & 0xFF,
+        (ttl >> 8) & 0xFF,
+        ttl & 0xFF,
+      ]);
+
+      final ptrBytes = encodeDomainName(resolvedPtrDomain);
+      builder.add([
+        (ptrBytes.length >> 8) & 0xFF,
+        ptrBytes.length & 0xFF,
+      ]);
+      builder.add(ptrBytes);
     }
 
     return builder.toBytes();

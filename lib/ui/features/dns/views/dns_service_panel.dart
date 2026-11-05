@@ -16,22 +16,49 @@ class DnsServicePanel extends StatefulWidget {
 
 class _DnsServicePanelState extends State<DnsServicePanel> {
   late TextEditingController _portController;
+  late TextEditingController _upstreamController;
   final TextEditingController _domainController = TextEditingController();
   final TextEditingController _ipController = TextEditingController();
+  String? _lastSyncedUpstream;
+  int? _lastSyncedPort;
 
   @override
   void initState() {
     super.initState();
     final vm = context.read<NetworkServicesViewModel>();
     _portController = TextEditingController(text: vm.dnsPort.toString());
+    _upstreamController = TextEditingController(text: vm.upstreamDnsIp ?? '');
+    _lastSyncedUpstream = vm.upstreamDnsIp;
+    _lastSyncedPort = vm.dnsPort;
   }
 
   @override
   void dispose() {
     _portController.dispose();
+    _upstreamController.dispose();
     _domainController.dispose();
     _ipController.dispose();
     super.dispose();
+  }
+
+  void _applyUpstream(NetworkServicesViewModel vm, String rawIp) {
+    final trimmed = rawIp.trim();
+    if (trimmed.isEmpty) {
+      vm.setUpstreamDnsIp(null);
+      _upstreamController.clear();
+      _lastSyncedUpstream = null;
+      return;
+    }
+    final parsed = InternetAddress.tryParse(trimmed);
+    if (parsed == null || parsed.type != InternetAddressType.IPv4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Upstream DNS must be a valid IPv4 address (e.g. 8.8.8.8 or 1.1.1.1)')),
+      );
+      return;
+    }
+    vm.setUpstreamDnsIp(trimmed);
+    _upstreamController.text = trimmed;
+    _lastSyncedUpstream = trimmed;
   }
 
   void _addRecord(NetworkServicesViewModel vm) {
@@ -53,9 +80,12 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
       return;
     }
 
-    if (domain != '*' && !RegExp(r'^[a-zA-Z0-9_\-\.]+$').hasMatch(domain)) {
+    // Allow global wildcard '*', suffix wildcard '*.domain.local', or standard domain names
+    final validDomain = domain == '*' ||
+        RegExp(r'^(\*\.)?[a-zA-Z0-9_\-]+(\.[a-zA-Z0-9_\-]+)*$').hasMatch(domain);
+    if (!validDomain) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Domain name contains invalid characters')),
+        const SnackBar(content: Text('Invalid domain format (use e.g. gateway.local, *.lab.local, or *)')),
       );
       return;
     }
@@ -70,6 +100,15 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
     final vm = context.watch<NetworkServicesViewModel>();
     final isRunning = vm.dnsStatus.isRunning;
     final dnsLogs = vm.filteredLogs.where((l) => l.serviceName == 'DNS').toList();
+
+    if (!isRunning && _lastSyncedPort != vm.dnsPort) {
+      _portController.text = vm.dnsPort.toString();
+      _lastSyncedPort = vm.dnsPort;
+    }
+    if (_lastSyncedUpstream != vm.upstreamDnsIp) {
+      _upstreamController.text = vm.upstreamDnsIp ?? '';
+      _lastSyncedUpstream = vm.upstreamDnsIp;
+    }
 
     return Column(
       children: [
@@ -124,13 +163,47 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Static Host Records',
+                        'Static Host Records & Forwarding',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Map domain hostnames to IP addresses. Wildcard (*) matches any unmapped request.',
+                        'Map domain hostnames, suffix wildcards (*.lab.local), or global (*) to IP addresses. Active DHCP lease hostnames are also resolved automatically.',
                         style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Upstream DNS Forwarder Row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _upstreamController,
+                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                              decoration: InputDecoration(
+                                labelText: 'Upstream DNS Forwarder (Optional)',
+                                hintText: 'e.g. 8.8.8.8 or 1.1.1.1 (leave empty for NXDOMAIN)',
+                                isDense: true,
+                                suffixIcon: vm.upstreamDnsIp != null
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 16),
+                                        tooltip: 'Disable Upstream Forwarding',
+                                        onPressed: () => _applyUpstream(vm, ''),
+                                      )
+                                    : null,
+                              ),
+                              onSubmitted: (val) => _applyUpstream(vm, val),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () => _applyUpstream(vm, _upstreamController.text),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
+                            child: const Text('Set Forwarder', style: TextStyle(fontSize: 12)),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
 
@@ -142,7 +215,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                               controller: _domainController,
                               style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                               decoration: const InputDecoration(
-                                hintText: 'Domain (e.g. gateway.local or *)',
+                                hintText: 'Domain (e.g. gateway.local, *.lab.local, *)',
                                 isDense: true,
                               ),
                             ),
@@ -190,7 +263,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                   separatorBuilder: (_, _) => const Divider(height: 1),
                                   itemBuilder: (context, idx) {
                                     final record = vm.dnsRecords[idx];
-                                    final isWildcard = record.domain == '*';
+                                    final isWildcard = record.domain.startsWith('*');
                                     return ListTile(
                                       dense: true,
                                       leading: Icon(
@@ -288,7 +361,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                   itemCount: dnsLogs.length,
                                   itemBuilder: (context, idx) {
                                     final log = dnsLogs[idx];
-                                    final isResolved = log.action == 'RESOLVED';
+                                    final isResolved = log.action == 'RESOLVED' || log.action == 'FORWARDED';
                                     final timeStr = DateFormat('HH:mm:ss.SSS').format(log.timestamp);
                                     return Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

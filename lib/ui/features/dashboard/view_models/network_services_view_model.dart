@@ -5,6 +5,7 @@ import 'package:network_suite_shared/network_suite_shared.dart';
 import '../../../../data/repositories/network_services_repository.dart';
 import '../../../../data/services/device/mac_address_helper.dart';
 import '../../../../data/services/export/csv_export_service.dart';
+import '../../../../data/services/storage/settings_storage_service.dart';
 import '../../../../domain/models/dhcp_config.dart';
 import '../../../../domain/models/dhcp_lease.dart';
 import '../../../../domain/models/dhcp_static_reservation.dart';
@@ -20,13 +21,14 @@ class NetworkServicesViewModel extends ChangeNotifier {
   List<NetworkInterfaceInfo> _interfaces = [];
   NetworkInterfaceInfo? _selectedInterface;
   bool _hasElevatedPrivileges = false;
+  bool _disposed = false;
 
   int _dnsPort = 53;
   int _ntpPort = 123;
   int _dhcpPort = 67;
+  String? _dhcpValidationError;
 
   late DhcpConfig _dhcpConfig;
-  final List<DnsRecord> _dnsRecords = [];
 
   ServiceLogRecord? _selectedLog;
   String _logFilter = 'ALL';
@@ -45,8 +47,14 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   NetworkServicesViewModel({NetworkServicesRepository? repository})
       : _repository = repository ?? NetworkServicesRepository() {
-    _dhcpConfig = DhcpConfig.defaultConfig;
+    _dhcpConfig = _repository.dhcpConfig;
     _init();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   // Getters
@@ -64,10 +72,12 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   DhcpConfig get dhcpConfig => _dhcpConfig;
   List<DhcpLease> get dhcpLeases => _repository.dhcpLeases;
-  List<DnsRecord> get dnsRecords => _dnsRecords;
+  List<DnsRecord> get dnsRecords => _repository.dnsRecords;
+  String? get upstreamDnsIp => _repository.upstreamDnsIp;
   List<WolDevice> get wolDevices => _repository.wolDevices;
 
   ServiceLogRecord? get selectedLog => _selectedLog;
+  String? get dhcpValidationError => _dhcpValidationError;
   String get logFilter => _logFilter;
   String get searchQuery => _searchQuery;
   DateTime get currentTime => DateTime.now();
@@ -76,6 +86,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
       dnsStatus.isRunning || ntpStatus.isRunning || dhcpStatus.isRunning;
 
   String? get activeErrorMessage {
+    if (_dhcpValidationError != null) return 'DHCP Config: $_dhcpValidationError';
     if (dnsStatus.hasError) return 'DNS: ${dnsStatus.lastError}';
     if (ntpStatus.hasError) return 'NTP: ${ntpStatus.lastError}';
     if (dhcpStatus.hasError) return 'DHCP: ${dhcpStatus.lastError}';
@@ -108,15 +119,44 @@ class NetworkServicesViewModel extends ChangeNotifier {
   }
 
   Future<void> _init() async {
+    final persisted = await _repository.loadSettings();
     _hasElevatedPrivileges = await _repository.checkPrivileges();
     _interfaces = await _repository.getInterfaces();
+    if (_disposed) return;
 
-    if (_interfaces.isNotEmpty) {
-      _selectedInterface = _interfaces.first;
-      _applyInterfaceToDhcpDefaults(_selectedInterface!);
+    if (persisted != null) {
+      if (persisted.dnsPort != null) _dnsPort = persisted.dnsPort!;
+      if (persisted.ntpPort != null) _ntpPort = persisted.ntpPort!;
+      if (persisted.dhcpPort != null) _dhcpPort = persisted.dhcpPort!;
+      if (persisted.upstreamDnsIp != null) {
+        _repository.setUpstreamDnsIp(persisted.upstreamDnsIp);
+      }
+      if (persisted.dnsRecords != null) {
+        _repository.setDnsRecords(persisted.dnsRecords!);
+      }
+      if (persisted.dhcpConfig != null) {
+        _dhcpConfig = persisted.dhcpConfig!;
+        _repository.updateDhcpConfig(_dhcpConfig);
+      }
+      if (persisted.activeLeases != null && persisted.activeLeases!.isNotEmpty) {
+        _repository.restoreDhcpLeases(persisted.activeLeases!);
+      }
     }
 
-    _repository.setDnsRecords(_dnsRecords);
+    if (_interfaces.isNotEmpty) {
+      if (persisted?.selectedInterfaceName != null) {
+        _selectedInterface = _interfaces.firstWhere(
+          (i) => i.name == persisted!.selectedInterfaceName,
+          orElse: () => _interfaces.first,
+        );
+      } else {
+        _selectedInterface = _interfaces.first;
+      }
+
+      if (persisted?.dhcpConfig == null) {
+        _applyInterfaceToDhcpDefaults(_selectedInterface!);
+      }
+    }
 
     _logSub = _repository.logsStream.listen((_) {
       _invalidateLogCache();
@@ -125,7 +165,10 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _dnsSub = _repository.dnsStatusStream.listen((_) => notifyListeners());
     _ntpSub = _repository.ntpStatusStream.listen((_) => notifyListeners());
     _dhcpSub = _repository.dhcpStatusStream.listen((_) => notifyListeners());
-    _leaseSub = _repository.dhcpLeasesStream.listen((_) => notifyListeners());
+    _leaseSub = _repository.dhcpLeasesStream.listen((_) {
+      _persistSettings();
+      notifyListeners();
+    });
     _wolSub = _repository.wolDevicesStream.listen((_) => notifyListeners());
 
     try {
@@ -139,12 +182,35 @@ class NetworkServicesViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _persistSettings() {
+    _repository.saveSettings(
+      AppPersistedSettings(
+        dhcpConfig: _dhcpConfig,
+        dnsRecords: _repository.dnsRecords,
+        upstreamDnsIp: _repository.upstreamDnsIp,
+        dhcpPort: _dhcpPort,
+        dnsPort: _dnsPort,
+        ntpPort: _ntpPort,
+        selectedInterfaceName: _selectedInterface?.name,
+        activeLeases: _repository.dhcpLeases,
+      ),
+    );
+  }
+
   void _applyInterfaceToDhcpDefaults(NetworkInterfaceInfo iface) {
+    final defaultGw = iface.defaultGateway ?? iface.ip;
+    var candidateStart = iface.hostIpPlusOne;
+    if (candidateStart == defaultGw) {
+      final gwNum = DhcpConfig.ipToNum(defaultGw);
+      if (gwNum != 0) {
+        candidateStart = DhcpConfig.numToIp(gwNum + 1);
+      }
+    }
     _dhcpConfig = _dhcpConfig.copyWith(
-      startIp: iface.hostIpPlusOne,
+      startIp: candidateStart,
       subnetMask: iface.subnetMask,
-      gatewayIp: iface.ip,
-      dnsServerIp: _dhcpConfig.useLocalDns ? iface.ip : _dhcpConfig.dnsServerIp,
+      gatewayIp: defaultGw,
+      dnsServerIp: _dhcpConfig.useLocalDns ? iface.ip : defaultGw,
     );
     _repository.updateDhcpConfig(_dhcpConfig);
   }
@@ -154,12 +220,14 @@ class NetworkServicesViewModel extends ChangeNotifier {
     if (!dhcpStatus.isRunning) {
       _applyInterfaceToDhcpDefaults(iface);
     }
+    _persistSettings();
     notifyListeners();
   }
 
   void setDnsPort(int port) {
     if (port >= 1 && port <= 65535) {
       _dnsPort = port;
+      _persistSettings();
       notifyListeners();
     }
   }
@@ -167,6 +235,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   void setNtpPort(int port) {
     if (port >= 1 && port <= 65535) {
       _ntpPort = port;
+      _persistSettings();
       notifyListeners();
     }
   }
@@ -174,6 +243,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   void setDhcpPort(int port) {
     if (port >= 1 && port <= 65535) {
       _dhcpPort = port;
+      _persistSettings();
       notifyListeners();
     }
   }
@@ -184,13 +254,17 @@ class NetworkServicesViewModel extends ChangeNotifier {
       useLocalDns: useLocal,
       dnsServerIp: useLocal ? hostIp : _dhcpConfig.dnsServerIp,
     );
+    _dhcpValidationError = null;
     _repository.updateDhcpConfig(_dhcpConfig);
+    _persistSettings();
     notifyListeners();
   }
 
   void updateDhcpConfig(DhcpConfig config) {
     _dhcpConfig = config;
+    _dhcpValidationError = null;
     _repository.updateDhcpConfig(config);
+    _persistSettings();
     notifyListeners();
   }
 
@@ -225,13 +299,29 @@ class NetworkServicesViewModel extends ChangeNotifier {
     if (dhcpStatus.isRunning) {
       await _repository.stopDhcp();
     } else {
-      InternetAddress? addr;
-      if (_selectedInterface != null) {
-        addr = InternetAddress.tryParse(_selectedInterface!.ip);
-      }
       if (_dhcpConfig.useLocalDns && _selectedInterface != null) {
         _dhcpConfig = _dhcpConfig.copyWith(dnsServerIp: _selectedInterface!.ip);
         _repository.updateDhcpConfig(_dhcpConfig);
+      }
+
+      final validationErrors = _dhcpConfig.validate(serverIp: _selectedInterface?.ip);
+      if (validationErrors.isNotEmpty) {
+        _dhcpValidationError = validationErrors.first;
+        _repository.logServiceEvent(
+          serviceType: ServiceType.dhcp,
+          action: 'CONFIG_ERROR',
+          summary: 'Cannot start DHCP Server: ${validationErrors.join(" ")}',
+          severity: LogSeverity.error,
+          details: validationErrors.join('\n'),
+        );
+        notifyListeners();
+        return;
+      }
+      _dhcpValidationError = null;
+
+      InternetAddress? addr;
+      if (_selectedInterface != null) {
+        addr = InternetAddress.tryParse(_selectedInterface!.ip);
       }
       // H1: Bind consistently with startAll and provide serverIp
       await _repository.startDhcp(
@@ -252,13 +342,28 @@ class NetworkServicesViewModel extends ChangeNotifier {
       _dhcpConfig = _dhcpConfig.copyWith(dnsServerIp: _selectedInterface!.ip);
       _repository.updateDhcpConfig(_dhcpConfig);
     }
-    await _repository.startAll(
-      dnsPort: _dnsPort,
-      ntpPort: _ntpPort,
-      dhcpPort: _dhcpPort,
-      bindAddress: addr ?? InternetAddress.anyIPv4,
-      serverIp: _selectedInterface?.ip,
-    );
+
+    await _repository.startDns(port: _dnsPort, bindAddress: addr ?? InternetAddress.anyIPv4);
+    await _repository.startNtp(port: _ntpPort, bindAddress: addr ?? InternetAddress.anyIPv4);
+
+    final validationErrors = _dhcpConfig.validate(serverIp: _selectedInterface?.ip);
+    if (validationErrors.isNotEmpty) {
+      _dhcpValidationError = validationErrors.first;
+      _repository.logServiceEvent(
+        serviceType: ServiceType.dhcp,
+        action: 'CONFIG_ERROR',
+        summary: 'Cannot start DHCP Server: ${validationErrors.join(" ")}',
+        severity: LogSeverity.error,
+        details: validationErrors.join('\n'),
+      );
+    } else {
+      _dhcpValidationError = null;
+      await _repository.startDhcp(
+        port: _dhcpPort,
+        bindAddress: addr ?? InternetAddress.anyIPv4,
+        serverIp: _selectedInterface?.ip,
+      );
+    }
     notifyListeners();
   }
 
@@ -267,17 +372,22 @@ class NetworkServicesViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // DNS Records Management
+  // DNS Records & Forwarder Management
   void addDnsRecord(DnsRecord record) {
-    _dnsRecords.removeWhere((r) => r.domain.toLowerCase() == record.domain.toLowerCase());
-    _dnsRecords.add(record);
-    _repository.setDnsRecords(_dnsRecords);
+    _repository.addDnsRecord(record);
+    _persistSettings();
     notifyListeners();
   }
 
   void removeDnsRecord(String domain) {
-    _dnsRecords.removeWhere((r) => r.domain.toLowerCase() == domain.toLowerCase());
     _repository.removeDnsRecord(domain);
+    _persistSettings();
+    notifyListeners();
+  }
+
+  void setUpstreamDnsIp(String? ip) {
+    _repository.setUpstreamDnsIp(ip);
+    _persistSettings();
     notifyListeners();
   }
 
@@ -285,12 +395,16 @@ class NetworkServicesViewModel extends ChangeNotifier {
   Future<void> addWolDevice(WolDevice device) => _repository.addWolDevice(device);
   Future<void> updateWolDevice(WolDevice device) => _repository.updateWolDevice(device);
   Future<void> deleteWolDevice(String id) => _repository.deleteWolDevice(id);
-  Future<bool> wakeDevice(WolDevice device) => _repository.wakeDevice(device);
+  Future<bool> wakeDevice(WolDevice device) => _repository.wakeDevice(
+        device,
+        fallbackSubnetBroadcast: _selectedInterface?.broadcastAddress,
+      );
   Future<String?> resolveMacFromIp(String ip) => _repository.resolveMacFromIp(ip);
 
   // DHCP Leases
   void clearDhcpLeases() {
     _repository.clearDhcpLeases();
+    _persistSettings();
     notifyListeners();
   }
 
@@ -337,12 +451,14 @@ class NetworkServicesViewModel extends ChangeNotifier {
   void addStaticReservation(DhcpStaticReservation reservation) {
     _repository.addStaticReservation(reservation);
     _dhcpConfig = _repository.dhcpConfig;
+    _persistSettings();
     notifyListeners();
   }
 
   void removeStaticReservation(String macAddress) {
     _repository.removeStaticReservation(macAddress);
     _dhcpConfig = _repository.dhcpConfig;
+    _persistSettings();
     notifyListeners();
   }
 
@@ -353,6 +469,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _logSub?.cancel();
     _dnsSub?.cancel();
     _ntpSub?.cancel();

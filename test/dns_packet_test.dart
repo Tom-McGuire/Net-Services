@@ -96,5 +96,15 @@ void main() {
 
       expect(DnsPacketParser.parseQuery(responsePacket), isNull);
     });
+
+    test('Rejects DNS labels containing invalid characters instead of stripping them', () {
+      final builder = BytesBuilder();
+      builder.add([0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+      // Label 'ex@mple' has invalid '@'
+      builder.add([7, ...'ex@mple'.codeUnits, 3, ...'com'.codeUnits, 0]);
+      builder.add([0x00, 0x01, 0x00, 0x01]);
+
+      expect(DnsPacketParser.parseQuery(builder.toBytes()), isNull);
+    });
   });
 }

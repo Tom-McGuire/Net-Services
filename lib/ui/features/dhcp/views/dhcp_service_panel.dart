@@ -26,6 +26,36 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
   late TextEditingController _dnsController;
   late TextEditingController _leaseHoursController;
   bool _useLocalDns = false;
+  DhcpConfig? _lastSyncedConfig;
+  String? _lastSyncedHostIp;
+  int? _lastSyncedPort;
+
+  static String _formatLeaseInput(int seconds) {
+    if (seconds <= 0) return '24';
+    if (seconds % 3600 == 0) return '${seconds ~/ 3600}';
+    if (seconds % 60 == 0) return '${seconds ~/ 60}m';
+    return '${seconds}s';
+  }
+
+  static int _parseLeaseInputToSeconds(String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.isEmpty) return 86400;
+    if (s.endsWith('s')) {
+      final v = double.tryParse(s.substring(0, s.length - 1).trim());
+      return v != null ? v.round() : 0;
+    }
+    if (s.endsWith('m')) {
+      final v = double.tryParse(s.substring(0, s.length - 1).trim());
+      return v != null ? (v * 60).round() : 0;
+    }
+    if (s.endsWith('h')) {
+      final v = double.tryParse(s.substring(0, s.length - 1).trim());
+      return v != null ? (v * 3600).round() : 0;
+    }
+    final hours = double.tryParse(s);
+    if (hours == null) return 0;
+    return (hours * 3600).round();
+  }
 
   @override
   void initState() {
@@ -39,9 +69,12 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     _gatewayController = TextEditingController(text: vm.dhcpConfig.gatewayIp);
     _dnsController = TextEditingController(text: vm.dhcpConfig.dnsServerIp);
     _leaseHoursController = TextEditingController(
-      text: (vm.dhcpConfig.leaseTimeSeconds ~/ 3600).toString(),
+      text: _formatLeaseInput(vm.dhcpConfig.leaseTimeSeconds),
     );
     _useLocalDns = vm.dhcpConfig.useLocalDns;
+    _lastSyncedConfig = vm.dhcpConfig;
+    _lastSyncedHostIp = vm.selectedInterface?.ip;
+    _lastSyncedPort = vm.dhcpPort;
 
     _startIpController.addListener(_recalculateEndIp);
     _poolSizeController.addListener(_recalculateEndIp);
@@ -79,6 +112,9 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
   }
 
   void _syncControllersWithVm(DhcpConfig config, NetworkServicesViewModel vm) {
+    if (_portController.text != vm.dhcpPort.toString()) {
+      _portController.text = vm.dhcpPort.toString();
+    }
     if (_startIpController.text != config.startIp) {
       _startIpController.text = config.startIp;
     }
@@ -94,11 +130,18 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     if (_gatewayController.text != config.gatewayIp) {
       _gatewayController.text = config.gatewayIp;
     }
+    final formattedLease = _formatLeaseInput(config.leaseTimeSeconds);
+    if (_leaseHoursController.text != formattedLease) {
+      _leaseHoursController.text = formattedLease;
+    }
     _useLocalDns = config.useLocalDns;
     final expectedDns = _useLocalDns ? (vm.selectedInterface?.ip ?? config.dnsServerIp) : config.dnsServerIp;
     if (_dnsController.text != expectedDns) {
       _dnsController.text = expectedDns;
     }
+    _lastSyncedConfig = config;
+    _lastSyncedHostIp = vm.selectedInterface?.ip;
+    _lastSyncedPort = vm.dhcpPort;
   }
 
   void _applyConfig(NetworkServicesViewModel vm) {
@@ -108,19 +151,20 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     final gateway = _gatewayController.text.trim();
     final hostIp = vm.selectedInterface?.ip ?? '127.0.0.1';
     final dns = _useLocalDns ? hostIp : _dnsController.text.trim();
-    final hours = int.tryParse(_leaseHoursController.text.trim()) ?? 24;
+    final leaseSeconds = _parseLeaseInputToSeconds(_leaseHoursController.text);
 
-    final newConfig = DhcpConfig(
+    // Preserve staticReservations via copyWith (fixes Bug 1.1)
+    final newConfig = vm.dhcpConfig.copyWith(
       startIp: startIp,
       poolSize: poolSize,
       subnetMask: mask,
       gatewayIp: gateway,
       dnsServerIp: dns,
-      leaseTimeSeconds: hours * 3600,
+      leaseTimeSeconds: leaseSeconds,
       useLocalDns: _useLocalDns,
     );
 
-    final errors = newConfig.validate();
+    final errors = newConfig.validate(serverIp: vm.selectedInterface?.ip);
     if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -133,6 +177,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     }
 
     vm.updateDhcpConfig(newConfig);
+    _lastSyncedConfig = newConfig;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -196,12 +241,14 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     final vm = context.watch<NetworkServicesViewModel>();
     final isRunning = vm.dhcpStatus.isRunning;
     final config = vm.dhcpConfig;
+    final hostIp = vm.selectedInterface?.ip ?? '127.0.0.1';
 
-    if (!isRunning) {
+    if (!isRunning &&
+        (_lastSyncedConfig != config ||
+            _lastSyncedHostIp != vm.selectedInterface?.ip ||
+            _lastSyncedPort != vm.dhcpPort)) {
       _syncControllersWithVm(config, vm);
     }
-
-    final hostIp = vm.selectedInterface?.ip ?? '127.0.0.1';
 
     return Column(
       children: [
@@ -347,14 +394,13 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                   ),
                   // Lease Duration
                   SizedBox(
-                    width: 100,
+                    width: 110,
                     child: TextField(
                       controller: _leaseHoursController,
                       enabled: !isRunning,
-                      keyboardType: TextInputType.number,
                       style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                       decoration: const InputDecoration(
-                        labelText: 'Lease (Hours)',
+                        labelText: 'Lease (e.g. 24, 30m)',
                         isDense: true,
                       ),
                     ),
@@ -858,7 +904,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
           ),
         ],
       ),
-    );
+    ).whenComplete(controller.dispose);
   }
 
   void _showStaticReservationDialog(
@@ -873,6 +919,8 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _StaticReservationDialog(
+        config: vm.dhcpConfig,
+        serverIp: vm.selectedInterface?.ip,
         reservation: reservation,
         initialMac: initialMac,
         initialIp: initialIp,
@@ -892,6 +940,8 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
 }
 
 class _StaticReservationDialog extends StatefulWidget {
+  final DhcpConfig config;
+  final String? serverIp;
   final DhcpStaticReservation? reservation;
   final String? initialMac;
   final String? initialIp;
@@ -899,6 +949,8 @@ class _StaticReservationDialog extends StatefulWidget {
   final void Function(DhcpStaticReservation reservation) onSave;
 
   const _StaticReservationDialog({
+    required this.config,
+    this.serverIp,
     this.reservation,
     this.initialMac,
     this.initialIp,
@@ -1110,9 +1162,37 @@ class _StaticReservationDialogState extends State<_StaticReservationDialog> {
                     if (val == null || val.trim().isEmpty) {
                       return 'Please provide a static IP address';
                     }
-                    final parsed = InternetAddress.tryParse(val.trim());
-                    if (parsed == null || parsed.type != InternetAddressType.IPv4) {
+                    final ip = val.trim();
+                    final parsed = InternetAddress.tryParse(ip);
+                    final ipNum = DhcpConfig.ipToNum(ip);
+                    if (parsed == null || parsed.type != InternetAddressType.IPv4 || ipNum == 0) {
                       return 'Invalid IPv4 address';
+                    }
+                    final cfg = widget.config;
+                    final maskNum = DhcpConfig.ipToNum(cfg.subnetMask);
+                    final startNum = DhcpConfig.ipToNum(cfg.startIp);
+                    if (maskNum != 0 && startNum != 0) {
+                      final networkNum = startNum & maskNum;
+                      final broadcastNum = networkNum | (~maskNum & 0xFFFFFFFF);
+                      if ((ipNum & maskNum) != networkNum) {
+                        return 'IP is outside the configured subnet (${cfg.subnetMask})';
+                      }
+                      if (ipNum <= networkNum || ipNum >= broadcastNum) {
+                        return 'Cannot reserve network or broadcast address';
+                      }
+                    }
+                    if (ip == cfg.gatewayIp) {
+                      return 'Cannot reserve the Default Gateway IP (${cfg.gatewayIp})';
+                    }
+                    if (widget.serverIp != null && ip == widget.serverIp) {
+                      return 'Cannot reserve this host server IP (${widget.serverIp})';
+                    }
+                    final currentMac = SharedDevice.normalizeMac(_macController.text.trim());
+                    final duplicate = cfg.staticReservations.any(
+                      (r) => r.ipAddress == ip && SharedDevice.normalizeMac(r.macAddress) != currentMac,
+                    );
+                    if (duplicate) {
+                      return 'This IP is already reserved for another MAC address';
                     }
                     return null;
                   },

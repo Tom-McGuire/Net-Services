@@ -5,7 +5,7 @@ import '../../../domain/models/service_log_record.dart';
 class CsvExportService {
   static String formatCsv(List<ServiceLogRecord> logs) {
     final buffer = StringBuffer();
-    buffer.writeln('"ID","Timestamp","Service","Action","Severity","Client Address","Summary"');
+    buffer.writeln('"ID","Timestamp","Service","Action","Severity","Client Address","Summary","Details"');
 
     for (final log in logs) {
       buffer.writeln([
@@ -16,6 +16,7 @@ class CsvExportService {
         _sanitizeCsvCell(log.severity.name),
         _sanitizeCsvCell(log.clientAddress ?? ''),
         _sanitizeCsvCell(log.summary),
+        _sanitizeCsvCell((log.details ?? '').replaceAll('\r\n', ' ').replaceAll('\n', ' ')),
       ].join(','));
     }
 
@@ -24,8 +25,13 @@ class CsvExportService {
 
   static String _sanitizeCsvCell(String value) {
     var v = value;
-    // Prevent spreadsheet formula injection (e.g. =CMD, +SUM, -DIFF, @IMPORT)
-    if (v.startsWith('=') || v.startsWith('+') || v.startsWith('-') || v.startsWith('@')) {
+    // Prevent spreadsheet formula injection (e.g. =CMD, +SUM, -DIFF, @IMPORT, leading tab/CR)
+    if (v.startsWith('=') ||
+        v.startsWith('+') ||
+        v.startsWith('-') ||
+        v.startsWith('@') ||
+        v.startsWith('\t') ||
+        v.startsWith('\r')) {
       v = "'$v";
     }
     return '"${v.replaceAll('"', '""')}"';
@@ -48,13 +54,20 @@ class CsvExportService {
 
   static Future<String> exportToFile(String content, String filename) async {
     final sanitizedFilename = filename.replaceAll(RegExp(r'[^a-zA-Z0-9._\-]'), '_');
-    final tempDir = Directory.systemTemp;
-    final exportDir = Directory('${tempDir.path}/net_services_exports');
+    Directory baseDir = Directory.systemTemp;
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    if (home != null && home.isNotEmpty) {
+      final downloads = Directory('$home${Platform.pathSeparator}Downloads');
+      if (await downloads.exists()) {
+        baseDir = downloads;
+      }
+    }
+    final exportDir = Directory('${baseDir.path}${Platform.pathSeparator}net_services_exports');
     if (!await exportDir.exists()) {
       await exportDir.create(recursive: true);
     }
 
-    final file = File('${exportDir.path}/$sanitizedFilename');
+    final file = File('${exportDir.path}${Platform.pathSeparator}$sanitizedFilename');
     await file.writeAsString(content);
     return file.path;
   }

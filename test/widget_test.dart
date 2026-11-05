@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:net_services/data/repositories/network_services_repository.dart';
+import 'package:net_services/data/services/wol/wol_storage_service.dart';
+import 'package:net_services/domain/models/dhcp_static_reservation.dart';
 import 'package:net_services/domain/models/service_log_record.dart';
 import 'package:net_services/main.dart';
 import 'package:net_services/ui/features/dashboard/views/top_control_bar.dart';
 import 'package:net_services/ui/features/shared/log_detail_panel.dart';
+
+NetworkServicesRepository _createIsolatedRepo() =>
+    NetworkServicesRepository(customStorage: WolStorageService(inMemory: true));
 
 void main() {
   testWidgets('NetworkServicesApp smoke test renders TopControlBar and service tabs', (WidgetTester tester) async {
@@ -11,7 +17,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const NetworkServicesApp());
+    await tester.pumpWidget(NetworkServicesApp(repository: _createIsolatedRepo()));
     await tester.pumpAndSettle();
 
     // Verify top title and main control bar render
@@ -80,17 +86,30 @@ void main() {
     expect(maximizedSize.height, greaterThan(500.0));
   });
 
-  testWidgets('DHCP Service Panel renders sub-tabs and Static Reservations section', (WidgetTester tester) async {
+  testWidgets('DHCP Service Panel renders sub-tabs and preserves Static Reservations on Apply Changes', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const NetworkServicesApp());
+    final repo = _createIsolatedRepo();
+    repo.addStaticReservation(const DhcpStaticReservation(
+      macAddress: 'AA:BB:CC:DD:EE:99',
+      ipAddress: '192.168.1.150',
+      deviceName: 'Core Switch',
+    ));
+
+    await tester.pumpWidget(NetworkServicesApp(repository: repo));
     await tester.pumpAndSettle();
 
     // Verify Active Leases and Static Reservations sub-tabs
     expect(find.textContaining('Active Leases'), findsOneWidget);
-    expect(find.textContaining('Static Reservations'), findsOneWidget);
+    expect(find.textContaining('Static Reservations (1)'), findsOneWidget);
+
+    // Click Apply Changes and ensure static reservation is NOT wiped (Bug 1.1 regression check)
+    await tester.tap(find.text('Apply Changes'));
+    await tester.pumpAndSettle();
+    expect(repo.dhcpConfig.staticReservations.length, equals(1));
+    expect(find.textContaining('Static Reservations (1)'), findsOneWidget);
 
     // Switch to Static Reservations tab
     await tester.tap(find.textContaining('Static Reservations'));
@@ -105,7 +124,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const NetworkServicesApp());
+    await tester.pumpWidget(NetworkServicesApp(repository: _createIsolatedRepo()));
     await tester.pumpAndSettle();
 
     // Switch to WOL tab

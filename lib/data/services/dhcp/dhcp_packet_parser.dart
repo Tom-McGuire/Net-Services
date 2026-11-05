@@ -25,6 +25,8 @@ enum DhcpMessageType {
 
 class DhcpPacket {
   final int op;
+  final int htype;
+  final int hlen;
   final int xid;
   final int flags;
   final String ciaddr;
@@ -40,6 +42,8 @@ class DhcpPacket {
 
   const DhcpPacket({
     required this.op,
+    this.htype = 1,
+    this.hlen = 6,
     required this.xid,
     required this.flags,
     required this.ciaddr,
@@ -63,7 +67,7 @@ class DhcpPacketParser {
     if (data.length < 240) return null;
 
     final op = data[0];
-    // Reject packets that are not BOOTREQUEST (op = 1)
+    // Reject packets that are not BOOTREQUEST (op = 1) or BOOTREPLY (op = 2)
     if (op != 1 && op != 2) return null;
 
     // Verify magic cookie at offset 236
@@ -75,6 +79,7 @@ class DhcpPacketParser {
     }
 
     final byteData = ByteData.sublistView(data);
+    final htype = data[1];
     final hlen = data[2];
     final xid = byteData.getUint32(4);
     final flags = byteData.getUint16(10);
@@ -127,6 +132,8 @@ class DhcpPacketParser {
 
     return DhcpPacket(
       op: op,
+      htype: htype,
+      hlen: hlen,
       xid: xid,
       flags: flags,
       ciaddr: ciaddr,
@@ -161,16 +168,19 @@ class DhcpPacketParser {
     required String routerIp,
     required String dnsServerIp,
     required int leaseTimeSeconds,
+    bool includeLeaseTime = true,
+    String? broadcastIp,
+    String? ntpServerIp,
     String? errorMessage,
   }) {
     final builder = BytesBuilder();
 
     // 0: op (2 = BOOTREPLY)
     builder.addByte(2);
-    // 1: htype (1 = Ethernet)
-    builder.addByte(1);
-    // 2: hlen (6 = MAC)
-    builder.addByte(6);
+    // 1: htype (echo request htype)
+    builder.addByte(request.htype);
+    // 2: hlen (echo request hlen)
+    builder.addByte(request.hlen);
     // 3: hops (0)
     builder.addByte(0);
 
@@ -194,8 +204,8 @@ class DhcpPacketParser {
       builder.add(_ipToBytes(request.ciaddr == '0.0.0.0' ? '0.0.0.0' : request.ciaddr));
     }
 
-    // 16..19: yiaddr ('Your' offered/assigned IP address; 0.0.0.0 on NAK)
-    if (replyType == DhcpMessageType.nak) {
+    // 16..19: yiaddr ('Your' offered/assigned IP address; 0.0.0.0 on NAK or INFORM ACK)
+    if (replyType == DhcpMessageType.nak || !includeLeaseTime) {
       builder.add([0x00, 0x00, 0x00, 0x00]);
     } else {
       builder.add(_ipToBytes(offeredIp));
@@ -234,18 +244,40 @@ class DhcpPacketParser {
         builder.add([56, len, ...msgBytes.take(len)]);
       }
     } else {
-      // Option 51: Lease Time (32-bit seconds)
-      final leaseBytes = Uint8List(4)..buffer.asByteData().setUint32(0, leaseTimeSeconds);
-      builder.add([51, 4, ...leaseBytes]);
+      if (includeLeaseTime && leaseTimeSeconds > 0) {
+        // Option 51: Lease Time (32-bit seconds)
+        final leaseBytes = Uint8List(4)..buffer.asByteData().setUint32(0, leaseTimeSeconds);
+        builder.add([51, 4, ...leaseBytes]);
+
+        // Option 58: Renewal (T1) Time Value (50% of lease time)
+        final t1Seconds = leaseTimeSeconds ~/ 2;
+        final t1Bytes = Uint8List(4)..buffer.asByteData().setUint32(0, t1Seconds);
+        builder.add([58, 4, ...t1Bytes]);
+
+        // Option 59: Rebinding (T2) Time Value (87.5% of lease time)
+        final t2Seconds = (leaseTimeSeconds * 7) ~/ 8;
+        final t2Bytes = Uint8List(4)..buffer.asByteData().setUint32(0, t2Seconds);
+        builder.add([59, 4, ...t2Bytes]);
+      }
 
       // Option 1: Subnet Mask
       builder.add([1, 4, ..._ipToBytes(subnetMask)]);
+
+      // Option 28: Broadcast Address (if provided)
+      if (broadcastIp != null && broadcastIp != '0.0.0.0') {
+        builder.add([28, 4, ..._ipToBytes(broadcastIp)]);
+      }
 
       // Option 3: Router / Default Gateway
       builder.add([3, 4, ..._ipToBytes(routerIp)]);
 
       // Option 6: Domain Name Server
       builder.add([6, 4, ..._ipToBytes(dnsServerIp)]);
+
+      // Option 42: NTP Servers (if provided)
+      if (ntpServerIp != null && ntpServerIp != '0.0.0.0') {
+        builder.add([42, 4, ..._ipToBytes(ntpServerIp)]);
+      }
     }
 
     // Option 255: End marker
