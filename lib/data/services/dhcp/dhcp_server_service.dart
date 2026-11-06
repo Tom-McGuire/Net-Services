@@ -13,6 +13,7 @@ class DhcpServerService {
   ServiceStatus _status = const ServiceStatus(port: 67);
   late DhcpLeaseManager _leaseManager;
   String _serverIp = '0.0.0.0';
+  int _clientReplyPort = 68;
   int _logSequence = 0;
 
   final _logController = StreamController<ServiceLogRecord>.broadcast();
@@ -53,11 +54,13 @@ class DhcpServerService {
     int port = 67,
     InternetAddress? bindAddress,
     String? serverIp,
+    int clientReplyPort = 68,
   }) async {
     if (_status.isRunning) return;
 
     final targetAddress = bindAddress ?? InternetAddress.anyIPv4;
     _serverIp = serverIp ?? (targetAddress != InternetAddress.anyIPv4 ? targetAddress.address : config.gatewayIp);
+    _clientReplyPort = clientReplyPort;
 
     try {
       _socket = await RawDatagramSocket.bind(
@@ -421,32 +424,43 @@ class DhcpServerService {
 
     if (targetIp != null && targetIp != '0.0.0.0') {
       try {
-        final sent = _socket!.send(bytes, InternetAddress(targetIp), 68);
+        final sent = _socket!.send(bytes, InternetAddress(targetIp), _clientReplyPort);
         if (sent > 0) return;
       } catch (_) {}
     }
 
-    // Try directed subnet broadcast first, then limited broadcast 255.255.255.255 on port 68
     bool sentAny = false;
+
+    // Loopback interface cannot route or broadcast to 255.255.255.255 on Linux.
+    // If bound to loopback or testing on 127.0.0.1, send directly to loopback client port.
+    if (_serverIp == '127.0.0.1' || (_socket != null && _socket!.address.isLoopback)) {
+      try {
+        final sent = _socket!.send(bytes, InternetAddress.loopbackIPv4, _clientReplyPort);
+        if (sent > 0) sentAny = true;
+      } catch (_) {}
+      return;
+    }
+
+    // Try directed subnet broadcast first, then limited broadcast 255.255.255.255 on client port
     final subnetBroadcast = _subnetBroadcastIp;
     if (subnetBroadcast != '255.255.255.255') {
       try {
-        final sent = _socket!.send(bytes, InternetAddress(subnetBroadcast), 68);
+        final sent = _socket!.send(bytes, InternetAddress(subnetBroadcast), _clientReplyPort);
         if (sent > 0) sentAny = true;
       } catch (_) {}
     }
 
     try {
-      final sent = _socket!.send(bytes, InternetAddress('255.255.255.255'), 68);
+      final sent = _socket!.send(bytes, InternetAddress('255.255.255.255'), _clientReplyPort);
       if (sent > 0) sentAny = true;
-    } catch (e) {
-      if (!sentAny) {
-        _emitLog(
-          action: 'SEND_ERROR',
-          summary: 'Failed to broadcast DHCP reply on port 68: $e',
-          severity: LogSeverity.error,
-        );
-      }
+    } catch (_) {}
+
+    if (!sentAny) {
+      _emitLog(
+        action: 'SEND_ERROR',
+        summary: 'Failed to broadcast DHCP reply on port $_clientReplyPort',
+        severity: LogSeverity.error,
+      );
     }
   }
 

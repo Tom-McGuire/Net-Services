@@ -73,9 +73,45 @@ void main() {
       expect(WolService.buildMagicPacket('not-a-mac'), isNull);
       expect(WolService.buildMagicPacket(''), isNull);
     });
+
+    test('sendWakePacket sends magic packet over UDP socket', () async {
+      final service = WolService();
+      // Test invalid MAC returns false
+      expect(await service.sendWakePacket(macAddress: 'invalid-mac'), isFalse);
+
+      // Test valid MAC sends packet to loopback
+      final sent = await service.sendWakePacket(
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+        broadcastAddress: '127.0.0.1',
+        port: 19009,
+      );
+      expect(sent, isTrue);
+    });
+
+    test('resolveMacFromIp returns null for invalid IP format', () async {
+      final service = WolService();
+      expect(await service.resolveMacFromIp('invalid-ip'), isNull);
+      expect(await service.resolveMacFromIp('999.999.999.999'), isNull);
+    });
   });
 
   group('WolStorageService Tests', () {
+    test('Handles corrupt JSON gracefully without crashing', () async {
+      final tempDir = Directory.systemTemp.createTempSync('wol_corrupt_');
+      final testFile = File('${tempDir.path}/test_wol.json');
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      // Write invalid JSON
+      await testFile.writeAsString('{not valid json');
+      final storage = WolStorageService(customFilePath: testFile.path);
+
+      final loaded = await storage.loadDevices();
+      expect(loaded, isEmpty);
+    });
     test('Saves and loads devices from custom storage path', () async {
       final tempDir = Directory.systemTemp.createTempSync('wol_test_');
       final testFile = File('${tempDir.path}/test_wol.json');

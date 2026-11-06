@@ -52,4 +52,7 @@ class NetworkInterfaceInfo {
     final o4 = mask & 0xFF;
     return '$o1.$o2.$o3.$o4';
   }
+
+  @override
+  String toString() => '$name ($ip/$prefixLength, Gateway: ${defaultGateway ?? "None"})';
 }

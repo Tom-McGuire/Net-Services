@@ -239,7 +239,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                       child: GridView.builder(
                         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                           maxCrossAxisExtent: 420,
-                          mainAxisExtent: 215,
+                          mainAxisExtent: 245,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
                         ),

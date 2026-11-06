@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,7 +116,7 @@ void main() {
       expect(DhcpConfig.ipToNum('192.168.1.10'), greaterThan(0));
     });
 
-    test('M6: CSV Export Service prevents spreadsheet formula injection and quotes fields', () {
+    test('M6: CSV Export Service prevents spreadsheet formula injection and quotes fields', () async {
       final logs = [
         ServiceLogRecord(
           id: '1',
@@ -133,6 +134,14 @@ void main() {
       expect(csv, contains('\'=cmd|""/C calc""!A0'));
       expect(csv, contains('\'+44 1234'));
       expect(csv, startsWith('"ID","Timestamp","Service"'));
+
+      final json = CsvExportService.formatJson(logs);
+      expect(json, contains('"action": "QUERY"'));
+      expect(json, contains('"service": "DNS"'));
+
+      final savedPath = await CsvExportService.exportToFile('test-content', 'test_export.csv');
+      expect(File(savedPath).existsSync(), isTrue);
+      addTearDown(() => File(savedPath).deleteSync());
     });
 
     test('Fuzz: Parsers withstand random byte inputs without throwing unhandled exceptions', () {
