@@ -224,6 +224,77 @@ class NetworkServicesViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshInterfaces() async {
+    _interfaces = await _repository.getInterfaces();
+    if (_disposed) return;
+    if (_interfaces.isNotEmpty) {
+      if (_selectedInterface != null) {
+        _selectedInterface = _interfaces.firstWhere(
+          (i) => i.name == _selectedInterface!.name,
+          orElse: () => _interfaces.first,
+        );
+      } else {
+        _selectedInterface = _interfaces.first;
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> loadDemoData() async {
+    // 1. Add sample DNS records
+    addDnsRecord(const DnsRecord(domain: 'router.lab', ip: '192.168.1.1'));
+    addDnsRecord(const DnsRecord(domain: 'nas.lab', ip: '192.168.1.50'));
+    addDnsRecord(const DnsRecord(domain: '*.lab', ip: '192.168.1.100'));
+
+    // 2. Add sample DHCP leases
+    final now = DateTime.now();
+    _repository.restoreDhcpLeases([
+      DhcpLease(
+        ipAddress: '192.168.1.101',
+        macAddress: '00:1A:2B:3C:4D:5E',
+        hostname: 'MacBook-Pro',
+        leaseStart: now,
+        leaseDurationSeconds: 86400,
+        friendlyName: 'MacBook Pro 16"',
+      ),
+      DhcpLease(
+        ipAddress: '192.168.1.102',
+        macAddress: 'B8:27:EB:11:22:33',
+        hostname: 'RaspberryPi-DNS',
+        leaseStart: now,
+        leaseDurationSeconds: 86400,
+        friendlyName: 'Pi-hole DNS',
+      ),
+      DhcpLease(
+        ipAddress: '192.168.1.105',
+        macAddress: '3C:06:30:AA:BB:CC',
+        hostname: 'Workstation-Win11',
+        leaseStart: now,
+        leaseDurationSeconds: 86400,
+        friendlyName: 'Studio Workstation',
+      ),
+    ]);
+
+    // 3. Add sample WOL devices
+    await addWolDevice(const WolDevice(
+      id: 'demo_1',
+      name: 'Studio Workstation',
+      macAddress: '3C:06:30:AA:BB:CC',
+      ipAddress: '192.168.1.105',
+      port: 9,
+    ));
+    await addWolDevice(const WolDevice(
+      id: 'demo_2',
+      name: 'Backup Synology NAS',
+      macAddress: '00:11:32:44:55:66',
+      ipAddress: '192.168.1.50',
+      port: 9,
+    ));
+
+    _invalidateLogCache();
+    notifyListeners();
+  }
+
   void setDnsPort(int port) {
     if (port >= 1 && port <= 65535) {
       _dnsPort = port;

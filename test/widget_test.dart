@@ -6,6 +6,7 @@ import 'package:net_services/domain/models/dhcp_static_reservation.dart';
 import 'package:net_services/domain/models/service_log_record.dart';
 import 'package:net_services/main.dart';
 import 'package:net_services/ui/features/dashboard/views/top_control_bar.dart';
+import 'package:net_services/ui/features/shared/device_library_dialog.dart';
 import 'package:net_services/ui/features/shared/log_detail_panel.dart';
 
 NetworkServicesRepository _createIsolatedRepo() =>
@@ -22,7 +23,15 @@ void main() {
 
     // Verify top title and main control bar render
     expect(find.byType(TopControlBar), findsOneWidget);
-    expect(find.text('Network Services'), findsOneWidget);
+    expect(find.text('NETWORK SERVICES'), findsOneWidget);
+    expect(find.text('DHCP • DNS • NTP • WOL'), findsOneWidget);
+    expect(find.byTooltip('Refresh Interfaces'), findsOneWidget);
+    expect(find.text('Start All'), findsOneWidget);
+    expect(find.text('Device Library'), findsOneWidget);
+    expect(find.text('Load Demo'), findsOneWidget);
+    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('Export'), findsOneWidget);
+
     expect(find.text('DHCP Server'), findsWidgets);
     expect(find.text('NTP Time Server'), findsOneWidget);
     expect(find.text('DNS Server'), findsWidgets);
@@ -134,5 +143,37 @@ void main() {
     // Verify presence of "Import from Shared Devices" button
     expect(find.text('Import from Shared Devices'), findsWidgets);
     expect(find.text('Add Device'), findsOneWidget);
+  });
+
+  testWidgets('TopControlBar Device Library dialog opens and Load Demo populates data', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final repo = _createIsolatedRepo();
+    await tester.pumpWidget(NetworkServicesApp(repository: repo));
+    await tester.pumpAndSettle();
+
+    // Tap Load Demo
+    await tester.tap(find.text('Load Demo'));
+    await tester.pumpAndSettle();
+
+    // Verify demo DNS records, DHCP leases, and WOL devices are populated
+    expect(repo.dnsRecords.any((r) => r.domain == 'router.lab'), isTrue);
+    expect(repo.dhcpLeases.any((l) => l.hostname == 'MacBook-Pro'), isTrue);
+    expect(repo.wolDevices.any((d) => d.name == 'Studio Workstation'), isTrue);
+
+    // Tap Device Library
+    await tester.tap(find.text('Device Library'));
+    await tester.pumpAndSettle();
+
+    // Verify DeviceLibraryDialog opens
+    expect(find.byType(DeviceLibraryDialog), findsOneWidget);
+    expect(find.text('Shared Device Library'), findsOneWidget);
+
+    // Close dialog
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DeviceLibraryDialog), findsNothing);
   });
 }

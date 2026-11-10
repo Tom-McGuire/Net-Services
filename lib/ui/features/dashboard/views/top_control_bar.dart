@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:net_services/domain/models/network_interface_info.dart';
 import 'package:provider/provider.dart';
+import '../../shared/device_library_dialog.dart';
 import '../view_models/network_services_view_model.dart';
 
 class TopControlBar extends StatelessWidget {
@@ -52,193 +53,283 @@ class TopControlBar extends StatelessWidget {
     final hasElevated = vm.hasElevatedPrivileges;
 
     return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      height: 52,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-          ),
+          bottom: BorderSide(color: Color(0xFF2C2C2C), width: 1),
         ),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            // App Logo & Title
-            Icon(
-              Icons.hub_outlined,
-              size: 24,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Network Services',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'DHCP • NTP • DNS • WOL Suite',
-                  style: TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
-            ),
-            const SizedBox(width: 24),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availWidth = constraints.maxWidth.isFinite ? constraints.maxWidth : 1280.0;
+          const minRequiredWidth = 1360.0;
+          final contentWidth = availWidth > (minRequiredWidth + 32)
+              ? (availWidth - 32)
+              : minRequiredWidth;
 
-            // Interface Selector
-            const Text('Interface:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Theme.of(context).dividerColor),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<NetworkInterfaceInfo>(
-                  value: vm.selectedInterface,
-                  isDense: true,
-                  style: const TextStyle(fontSize: 12, color: Colors.white, fontFamily: 'monospace'),
-                  items: vm.interfaces.map((iface) {
-                    return DropdownMenuItem<NetworkInterfaceInfo>(
-                      value: iface,
-                      child: Text('${iface.name} - ${iface.ip} (/${iface.prefixLength})'),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      vm.selectInterface(val);
-                    }
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-
-            // Privilege Badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: hasElevated
-                    ? Colors.green.withValues(alpha: 0.15)
-                    : Colors.orange.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: hasElevated
-                    ? Colors.green.withValues(alpha: 0.4)
-                    : Colors.orange.withValues(alpha: 0.4),
-                ),
-              ),
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: contentWidth,
+              height: 52,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    hasElevated ? Icons.admin_panel_settings : Icons.lock_outline,
-                    size: 14,
-                    color: hasElevated ? Colors.green : Colors.orange,
+                  // ==================== ZONE 1: BRANDING ====================
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.asset(
+                      'assets/icons/app_icon.jpg',
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          Icons.hub_outlined,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'NETWORK SERVICES',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'DHCP • DNS • NTP • WOL',
+                        style: TextStyle(fontSize: 10, color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+
+                  // ==================== ZONE 2: INTERFACE & TARGET ====================
+                  Container(
+                    height: 32,
+                    width: 175,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF252526),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF3E3E42)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<NetworkInterfaceInfo>(
+                        value: vm.selectedInterface,
+                        isDense: true,
+                        dropdownColor: const Color(0xFF252526),
+                        style: const TextStyle(fontSize: 11, color: Colors.white, fontFamily: 'monospace'),
+                        items: vm.interfaces.map((iface) {
+                          return DropdownMenuItem<NetworkInterfaceInfo>(
+                            value: iface,
+                            child: Text(
+                              '${iface.name} - ${iface.ip} (/${iface.prefixLength})',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            vm.selectInterface(val);
+                          }
+                        },
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    hasElevated ? 'Elevated / Root' : 'Standard User (sudo needed for <1024)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: hasElevated ? Colors.green : Colors.orange,
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 16),
+                    tooltip: 'Refresh Interfaces',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () => vm.refreshInterfaces(),
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: hasElevated ? 'Elevated / Root Privileges' : 'Standard User (sudo needed for ports < 1024)',
+                    child: Container(
+                      height: 28,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: hasElevated
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : Colors.orange.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: hasElevated
+                              ? Colors.green.withValues(alpha: 0.4)
+                              : Colors.orange.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            hasElevated ? Icons.admin_panel_settings : Icons.lock_outline,
+                            size: 13,
+                            color: hasElevated ? Colors.green : Colors.orange,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            hasElevated ? 'Root' : 'User',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: hasElevated ? Colors.green : Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // ==================== ZONE 3: PRIMARY ACTIONS ====================
+                  FilledButton.icon(
+                    onPressed: () {
+                      if (isAnyRunning) {
+                        vm.stopAll();
+                      } else {
+                        _handleStartAll(context, vm);
+                      }
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: isAnyRunning
+                          ? const Color(0xFFEF4444) // Active Red
+                          : const Color(0xFF10B981), // Idle Emerald Green (from ARP Scout)
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: Icon(isAnyRunning ? Icons.stop : Icons.play_arrow, size: 16),
+                    label: Text(
+                      isAnyRunning ? 'Stop All' : 'Start All',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // ==================== ZONE 4: ECOSYSTEM & DEMO ====================
+                  OutlinedButton.icon(
+                    onPressed: () => DeviceLibraryDialog.show(context),
+                    icon: const Icon(Icons.devices, size: 15),
+                    label: const Text('Device Library', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: isAnyRunning ? null : () => vm.loadDemoData(),
+                    icon: const Icon(Icons.play_circle_outline, size: 15),
+                    label: const Text('Load Demo', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // ==================== ZONE 5: CLEAR & EXPORT ====================
+                  OutlinedButton.icon(
+                    onPressed: vm.filteredLogs.isEmpty ? null : () => _confirmClear(context, vm),
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 15),
+                    label: const Text('Clear', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    tooltip: 'Export',
+                    enabled: vm.filteredLogs.isNotEmpty,
+                    onSelected: (val) async {
+                      if (val == 'csv') {
+                        final path = await vm.exportCsv();
+                        if (path != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Exported logs to CSV: $path')),
+                          );
+                        }
+                      } else if (val == 'json') {
+                        final path = await vm.exportJson();
+                        if (path != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Exported logs to JSON: $path')),
+                          );
+                        }
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'csv',
+                        child: Row(
+                          children: [
+                            Icon(Icons.table_chart, size: 16),
+                            SizedBox(width: 8),
+                            Text('Export as CSV'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'json',
+                        child: Row(
+                          children: [
+                            Icon(Icons.code, size: 16),
+                            SizedBox(width: 8),
+                            Text('Export as JSON'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF2C2C2C)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download, size: 15, color: Colors.white70),
+                          SizedBox(width: 6),
+                          Text('Export', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                          Icon(Icons.arrow_drop_down, size: 14, color: Colors.white70),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 20),
-
-            // Start All / Stop All Button
-            FilledButton.icon(
-              onPressed: () {
-                if (isAnyRunning) {
-                  vm.stopAll();
-                } else {
-                  _handleStartAll(context, vm);
-                }
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: isAnyRunning ? Colors.red.shade700 : Colors.green.shade700,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              ),
-              icon: Icon(
-                isAnyRunning ? Icons.stop : Icons.play_arrow,
-                size: 18,
-              ),
-              label: Text(
-                isAnyRunning ? 'Stop All Services' : 'Start All Services',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(width: 12),
-
-            // Clear Logs Button
-            OutlinedButton.icon(
-              onPressed: vm.filteredLogs.isEmpty ? null : () => _confirmClear(context, vm),
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('Clear Logs'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red.shade300,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Export Menu
-            PopupMenuButton<String>(
-              tooltip: 'Export Logs',
-              enabled: vm.filteredLogs.isNotEmpty,
-              icon: const Icon(Icons.file_download_outlined, size: 20),
-              onSelected: (val) async {
-                if (val == 'csv') {
-                  final path = await vm.exportCsv();
-                  if (path != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Exported logs to CSV: $path')),
-                    );
-                  }
-                } else if (val == 'json') {
-                  final path = await vm.exportJson();
-                  if (path != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Exported logs to JSON: $path')),
-                    );
-                  }
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'csv',
-                  child: Row(
-                    children: [
-                      Icon(Icons.table_chart, size: 16),
-                      SizedBox(width: 8),
-                      Text('Export as CSV'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'json',
-                  child: Row(
-                    children: [
-                      Icon(Icons.code, size: 16),
-                      SizedBox(width: 8),
-                      Text('Export as JSON'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
