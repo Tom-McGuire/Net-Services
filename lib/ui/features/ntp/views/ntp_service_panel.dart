@@ -91,77 +91,89 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
 
         // Digital Clock Hero Banner
         Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           color: Theme.of(context).colorScheme.surfaceContainerLow,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              // Local Clock Display
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Local System Time', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  Text(
-                    DateFormat('HH:mm:ss').format(_currentTime),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  Text(
-                    DateFormat('EEEE, MMMM d, y').format(_currentTime),
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  ),
-                ],
-              ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      // Local Clock Display
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Local System Time', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('HH:mm:ss').format(_currentTime),
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                          Text(
+                            DateFormat('EEEE, MMMM d, y').format(_currentTime),
+                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                        ],
+                      ),
 
-              // UTC & Epoch Display
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('UTC Clock Reference', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  Text(
-                    DateFormat('HH:mm:ss').format(utcTime),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blueAccent,
-                    ),
-                  ),
-                  Text(
-                    'Timezone: ${_currentTime.timeZoneName} (UTC${_currentTime.timeZoneOffset.isNegative ? "" : "+"}${_currentTime.timeZoneOffset.inHours})',
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                ],
-              ),
+                      // UTC & Epoch Display
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('UTC Clock Reference', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('HH:mm:ss').format(utcTime),
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueAccent,
+                            ),
+                          ),
+                          Text(
+                            'Timezone: ${_currentTime.timeZoneName} (UTC${_currentTime.timeZoneOffset.isNegative ? "" : "+"}${_currentTime.timeZoneOffset.inHours})',
+                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
 
-              // NTP Metadata & Stratum
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Theme.of(context).dividerColor),
+                      // NTP Metadata & Stratum
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _diagRow('Stratum', '10 (Local Reference Clock)'),
+                            const SizedBox(height: 4),
+                            _diagRow('Precision', '~1 microsecond'),
+                            const SizedBox(height: 4),
+                            _diagRow('Ref ID', 'LOCL'),
+                            const SizedBox(height: 4),
+                            _diagRow('NTP Epoch', '$ntpEpochSeconds s'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _diagRow('Stratum', '10 (Local Reference Clock)'),
-                    const SizedBox(height: 4),
-                    _diagRow('Precision', '~1 microsecond'),
-                    const SizedBox(height: 4),
-                    _diagRow('Ref ID', 'LOCL'),
-                    const SizedBox(height: 4),
-                    _diagRow('NTP Epoch', '$ntpEpochSeconds s'),
-                  ],
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ),
         const Divider(),
