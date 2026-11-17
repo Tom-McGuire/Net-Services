@@ -37,9 +37,11 @@ class DhcpServerService {
     _leasesController.add(_leaseManager.activeLeases);
   }
 
-  void restoreLeases(List<DhcpLease> leases) {
+  void restoreLeases(List<DhcpLease> leases, {bool silent = false}) {
     _leaseManager.restoreLeases(leases);
-    _leasesController.add(_leaseManager.activeLeases);
+    if (!silent && !_leasesController.isClosed) {
+      _leasesController.add(_leaseManager.activeLeases);
+    }
   }
 
   String get _subnetBroadcastIp {
@@ -464,14 +466,18 @@ class DhcpServerService {
     }
   }
 
-  void clearLeases() {
+  void clearLeases({bool silent = false}) {
     _leaseManager.clearAll();
-    _leasesController.add([]);
-    _emitLog(
-      action: 'CLEAR',
-      summary: 'All DHCP active leases cleared',
-      severity: LogSeverity.info,
-    );
+    if (!silent) {
+      if (!_leasesController.isClosed) {
+        _leasesController.add([]);
+      }
+      _emitLog(
+        action: 'CLEAR',
+        summary: 'All DHCP active leases cleared',
+        severity: LogSeverity.info,
+      );
+    }
   }
 
   Future<void> stop() async {

@@ -1,10 +1,11 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:network_suite_shared/network_suite_shared.dart';
 import '../../../../data/services/device/mac_address_helper.dart';
 import '../../../../domain/models/dhcp_config.dart';
 import '../../../../domain/models/dhcp_static_reservation.dart';
 import 'package:provider/provider.dart';
+import '../../../theme/app_theme.dart';
 import '../../dashboard/view_models/network_services_view_model.dart';
 import '../../shared/port_input_field.dart';
 import '../../shared/service_status_badge.dart';
@@ -168,8 +169,11 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Invalid DHCP configuration:\n• ${errors.join('\n• ')}'),
-          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Invalid DHCP configuration:\n• ${errors.join('\n• ')}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: AppTheme.error,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -199,11 +203,11 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.amber),
-            SizedBox(width: 8),
-            Text('DHCP Server Confirmation'),
+            Icon(Icons.warning_amber_rounded, color: AppTheme.warning),
+            const SizedBox(width: 8),
+            const Text('DHCP Server Confirmation'),
           ],
         ),
         content: Text(
@@ -219,7 +223,10 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade800),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.warning,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Confirm & Start DHCP'),
           ),
@@ -277,7 +284,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
               FilledButton.icon(
                 onPressed: () => _confirmAndToggleDhcp(vm),
                 style: FilledButton.styleFrom(
-                  backgroundColor: isRunning ? Colors.red.shade700 : Colors.green.shade700,
+                  backgroundColor: isRunning ? AppTheme.error : AppTheme.success,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
@@ -296,11 +303,11 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.tune, size: 16, color: Colors.grey),
-                  SizedBox(width: 6),
-                  Text(
+                  Icon(Icons.tune, size: 16, color: AppTheme.textSecondary),
+                  const SizedBox(width: 6),
+                  const Text(
                     'Pool & Network Settings',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
@@ -461,7 +468,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                           'Hand out this machine\'s IP ($hostIp) as DNS server to resolve device names with the built-in DNS service',
                           style: TextStyle(
                             fontSize: 12,
-                            color: isRunning ? Colors.grey : Colors.white70,
+                            color: isRunning ? AppTheme.textMuted : AppTheme.textSecondary,
                           ),
                         ),
                       ),
@@ -488,7 +495,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                         isScrollable: true,
                         tabAlignment: TabAlignment.start,
                         labelColor: Theme.of(context).colorScheme.primary,
-                        unselectedLabelColor: Colors.grey,
+                        unselectedLabelColor: AppTheme.textSecondary,
                         indicatorColor: Theme.of(context).colorScheme.primary,
                         tabs: [
                           Tab(
@@ -576,10 +583,10 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
         ),
         Expanded(
           child: vm.dhcpLeases.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'No active DHCP leases assigned yet.',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                   ),
                 )
               : ListView.separated(
@@ -614,21 +621,21 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                         children: [
                           Text(
                             lease.ipAddress,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'monospace',
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: Colors.lightBlueAccent,
+                              color: AppTheme.isDark ? Colors.lightBlueAccent : AppTheme.accent,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Flexible(
                             child: Text(
                               friendlyName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: AppTheme.textPrimary,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -639,7 +646,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                             const SizedBox(width: 8),
                             Text(
                               '(${lease.hostname})',
-                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
@@ -657,19 +664,19 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
                               color: lease.isStatic
-                                  ? Colors.blue.withValues(alpha: 0.15)
-                                  : Colors.green.withValues(alpha: 0.15),
+                                  ? AppTheme.info.withValues(alpha: 0.15)
+                                  : AppTheme.success.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
                                 color: lease.isStatic
-                                    ? Colors.blue.withValues(alpha: 0.3)
-                                    : Colors.green.withValues(alpha: 0.3),
+                                    ? AppTheme.info.withValues(alpha: 0.35)
+                                    : AppTheme.success.withValues(alpha: 0.35),
                               ),
                             ),
                             child: Text(
                               lease.isStatic ? 'STATIC' : 'ACTIVE',
                               style: TextStyle(
-                                color: lease.isStatic ? Colors.lightBlueAccent : Colors.green,
+                                color: lease.isStatic ? AppTheme.info : AppTheme.success,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -750,20 +757,20 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
         ),
         Expanded(
           child: config.staticReservations.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.bookmark_border, size: 40, color: Colors.grey),
-                      SizedBox(height: 8),
+                      Icon(Icons.bookmark_border, size: 40, color: AppTheme.textMuted),
+                      const SizedBox(height: 8),
                       Text(
                         'No static IP reservations configured.',
-                        style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold),
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         'Assign fixed IP addresses to network devices using friendly name auto-completion.',
-                        style: TextStyle(color: Colors.grey, fontSize: 11),
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                       ),
                     ],
                   ),
@@ -798,21 +805,21 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                         children: [
                           Text(
                             res.ipAddress,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'monospace',
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: Colors.lightBlueAccent,
+                              color: AppTheme.isDark ? Colors.lightBlueAccent : AppTheme.accent,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Flexible(
                             child: Text(
                               friendlyName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: AppTheme.textPrimary,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -837,7 +844,7 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
                             ),
                           ),
                           IconButton(
-                            icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade400),
+                            icon: Icon(Icons.delete_outline, size: 16, color: AppTheme.error),
                             tooltip: 'Delete Reservation',
                             visualDensity: VisualDensity.compact,
                             onPressed: () => vm.removeStaticReservation(res.macAddress),
@@ -857,18 +864,21 @@ class _DhcpServicePanelState extends State<DhcpServicePanel> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.edit_note, size: 22, color: Colors.lightBlueAccent),
-            SizedBox(width: 8),
-            Text('Rename Device in Suite'),
+            Icon(Icons.edit_note, size: 22, color: AppTheme.info),
+            const SizedBox(width: 8),
+            const Text('Rename Device in Suite'),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('MAC Address: $mac', style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey)),
+            Text(
+              'MAC Address: $mac',
+              style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppTheme.textSecondary),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -1128,18 +1138,18 @@ class _StaticReservationDialogState extends State<_StaticReservationDialog> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.12),
+                      color: AppTheme.info.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                      border: Border.all(color: AppTheme.info.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.verified, size: 16, color: Colors.blueAccent),
+                        Icon(Icons.verified, size: 16, color: AppTheme.info),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Known Suite Device: "${_matchedSharedDevice!.name}"${_matchedSharedDevice!.vendor != null ? " (${_matchedSharedDevice!.vendor})" : ""}',
-                            style: const TextStyle(fontSize: 12, color: Colors.lightBlueAccent, fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 12, color: AppTheme.info, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],

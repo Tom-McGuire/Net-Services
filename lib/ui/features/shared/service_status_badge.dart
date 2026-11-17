@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../../domain/models/service_status.dart';
+import '../../theme/app_theme.dart';
 
 class ServiceStatusBadge extends StatelessWidget {
   final ServiceStatus status;
@@ -14,17 +15,17 @@ class ServiceStatusBadge extends StatelessWidget {
 
     switch (status.state) {
       case ServiceState.running:
-        color = Colors.green;
+        color = AppTheme.success;
         label = 'RUNNING (Port ${status.port})';
         icon = Icons.check_circle;
         break;
       case ServiceState.error:
-        color = Colors.red;
+        color = AppTheme.error;
         label = 'ERROR';
         icon = Icons.error_outline;
         break;
       case ServiceState.stopped:
-        color = Colors.grey;
+        color = AppTheme.textSecondary;
         label = 'STOPPED';
         icon = Icons.pause_circle_outline;
         break;

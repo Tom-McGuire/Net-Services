@@ -1,8 +1,9 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:net_services/domain/models/dns_record.dart';
 import 'package:provider/provider.dart';
+import '../../../theme/app_theme.dart';
 import '../../dashboard/view_models/network_services_view_model.dart';
 import '../../shared/port_input_field.dart';
 import '../../shared/service_status_badge.dart';
@@ -137,7 +138,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
               FilledButton.icon(
                 onPressed: () => vm.toggleDns(),
                 style: FilledButton.styleFrom(
-                  backgroundColor: isRunning ? Colors.red.shade700 : Colors.green.shade700,
+                  backgroundColor: isRunning ? AppTheme.error : AppTheme.success,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
@@ -167,9 +168,9 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Map domain hostnames, suffix wildcards (*.lab.local), or global (*) to IP addresses. Active DHCP lease hostnames are also resolved automatically.',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                       ),
                       const SizedBox(height: 12),
 
@@ -252,10 +253,10 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: vm.dnsRecords.isEmpty
-                              ? const Center(
+                              ? Center(
                                   child: Text(
                                     'No DNS records added yet.',
-                                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                                   ),
                                 )
                               : ListView.separated(
@@ -264,24 +265,25 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                   itemBuilder: (context, idx) {
                                     final record = vm.dnsRecords[idx];
                                     final isWildcard = record.domain.startsWith('*');
+                                    final wildcardColor = AppTheme.isDark ? Colors.amber : AppTheme.warning;
                                     return ListTile(
                                       dense: true,
                                       leading: Icon(
                                         isWildcard ? Icons.stars : Icons.public,
                                         size: 16,
-                                        color: isWildcard ? Colors.amber : Colors.blue,
+                                        color: isWildcard ? wildcardColor : AppTheme.info,
                                       ),
                                       title: Text(
                                         record.domain,
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.bold,
-                                          color: isWildcard ? Colors.amber : null,
+                                          color: isWildcard ? wildcardColor : null,
                                         ),
                                       ),
                                       subtitle: Text(
                                         'Type: A • TTL: ${record.ttl}s',
-                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                                       ),
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -289,21 +291,21 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: Colors.blue.withValues(alpha: 0.15),
+                                              color: AppTheme.info.withValues(alpha: 0.15),
                                               borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: Text(
                                               record.ip,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontFamily: 'monospace',
                                                 fontSize: 12,
-                                                color: Colors.blue,
+                                                color: AppTheme.info,
                                               ),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
                                           IconButton(
-                                            icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                            icon: Icon(Icons.close, size: 16, color: AppTheme.error),
                                             tooltip: 'Remove Record',
                                             onPressed: () => vm.removeDnsRecord(record.domain),
                                           ),
@@ -338,7 +340,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                           ),
                           Text(
                             '${dnsLogs.length} events logged',
-                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                           ),
                         ],
                       ),
@@ -351,10 +353,10 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                             color: Theme.of(context).colorScheme.surfaceContainerLowest,
                           ),
                           child: dnsLogs.isEmpty
-                              ? const Center(
+                              ? Center(
                                   child: Text(
                                     'No DNS queries resolved yet.',
-                                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                                   ),
                                 )
                               : ListView.builder(
@@ -376,10 +378,10 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                         children: [
                                           Text(
                                             timeStr,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               fontFamily: 'monospace',
-                                              color: Colors.grey,
+                                              color: AppTheme.textSecondary,
                                             ),
                                           ),
                                           const SizedBox(width: 12),
@@ -387,8 +389,8 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: isResolved
-                                                  ? Colors.green.withValues(alpha: 0.15)
-                                                  : Colors.orange.withValues(alpha: 0.15),
+                                                  ? AppTheme.success.withValues(alpha: 0.15)
+                                                  : AppTheme.warning.withValues(alpha: 0.15),
                                               borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: Text(
@@ -396,7 +398,7 @@ class _DnsServicePanelState extends State<DnsServicePanel> {
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.bold,
-                                                color: isResolved ? Colors.green : Colors.orange,
+                                                color: isResolved ? AppTheme.success : AppTheme.warning,
                                               ),
                                             ),
                                           ),

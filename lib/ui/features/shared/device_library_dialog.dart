@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:network_suite_shared/network_suite_shared.dart';
+import '../../theme/app_theme.dart';
 
 /// Modal dialog allowing users to browse, search, and manage devices
 /// in the Shared Device Library across Network Suite applications.
@@ -76,6 +77,28 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
     }).toList();
   }
 
+  InputDecoration _deviceFieldDecoration(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+      filled: true,
+      fillColor: AppTheme.isDark ? AppTheme.surface : AppTheme.surfaceHigh,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: AppTheme.inputBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: AppTheme.inputBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: AppTheme.accent, width: 1.5),
+      ),
+    );
+  }
+
   void _showEditDeviceDialog({SharedDevice? existing}) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final macCtrl = TextEditingController(text: existing?.macAddress ?? '');
@@ -89,11 +112,14 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF252526),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          backgroundColor: AppTheme.surfaceElevated,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: AppTheme.border),
+          ),
           title: Text(
             existing == null ? 'Add Device to Library' : 'Edit Device in Library',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
           ),
           content: SingleChildScrollView(
             child: SizedBox(
@@ -102,61 +128,41 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('MAC Address', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                  Text('MAC Address', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   const SizedBox(height: 4),
                   TextField(
                     controller: macCtrl,
                     enabled: existing == null,
                     style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                    decoration: InputDecoration(
-                      hintText: 'AA:BB:CC:DD:EE:FF',
-                      hintStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1E1E),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: Color(0xFF3E3E42)),
-                      ),
-                    ),
+                    decoration: _deviceFieldDecoration('AA:BB:CC:DD:EE:FF'),
                   ),
                   const SizedBox(height: 12),
-                  const Text('Friendly Name', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                  Text('Friendly Name', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   const SizedBox(height: 4),
                   TextField(
                     controller: nameCtrl,
                     style: const TextStyle(fontSize: 12),
-                    decoration: InputDecoration(
-                      hintText: 'e.g. Office Workstation',
-                      hintStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1E1E),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: Color(0xFF3E3E42)),
-                      ),
-                    ),
+                    decoration: _deviceFieldDecoration('e.g. Office Workstation'),
                   ),
                   const SizedBox(height: 12),
-                  const Text('Device Category', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                  Text('Device Category', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   const SizedBox(height: 4),
                   Container(
                     height: 36,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
+                      color: AppTheme.isDark ? AppTheme.surface : AppTheme.surfaceHigh,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF3E3E42)),
+                      border: Border.all(color: AppTheme.inputBorder),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: categories.any((c) => c.key == selectedCategory)
                             ? selectedCategory
                             : (categories.isNotEmpty ? categories.first.key : null),
-                        dropdownColor: const Color(0xFF252526),
+                        dropdownColor: AppTheme.surfaceElevated,
                         isDense: true,
-                        style: const TextStyle(fontSize: 12, color: Colors.white),
+                        style: TextStyle(fontSize: 12, color: AppTheme.textPrimary),
                         onChanged: (val) {
                           if (val != null) {
                             setDialogState(() => selectedCategory = val);
@@ -168,7 +174,7 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(c.icon, size: 14, color: const Color(0xFF0E639C)),
+                                Icon(c.icon, size: 14, color: AppTheme.accent),
                                 const SizedBox(width: 8),
                                 Text(c.label),
                               ],
@@ -179,41 +185,21 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text('Hardware Vendor', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                  Text('Hardware Vendor', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   const SizedBox(height: 4),
                   TextField(
                     controller: vendorCtrl,
                     style: const TextStyle(fontSize: 12),
-                    decoration: InputDecoration(
-                      hintText: 'e.g. Apple, Dell, Intel',
-                      hintStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1E1E),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: Color(0xFF3E3E42)),
-                      ),
-                    ),
+                    decoration: _deviceFieldDecoration('e.g. Apple, Dell, Intel'),
                   ),
                   const SizedBox(height: 12),
-                  const Text('Notes', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                  Text('Notes', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   const SizedBox(height: 4),
                   TextField(
                     controller: notesCtrl,
                     maxLines: 2,
                     style: const TextStyle(fontSize: 12),
-                    decoration: InputDecoration(
-                      hintText: 'e.g. Server room rack unit 4',
-                      hintStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1E1E),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: Color(0xFF3E3E42)),
-                      ),
-                    ),
+                    decoration: _deviceFieldDecoration('e.g. Server room rack unit 4'),
                   ),
                 ],
               ),
@@ -222,11 +208,12 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+              child: Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
+                backgroundColor: AppTheme.success,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
               ),
               onPressed: () {
@@ -268,21 +255,25 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF252526),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        title: const Text('Delete Device', style: TextStyle(color: Colors.white, fontSize: 16)),
+        backgroundColor: AppTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: AppTheme.border),
+        ),
+        title: Text('Delete Device', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
         content: Text(
           'Remove "${device.name}" (${device.macAddress}) from the Shared Device Library?',
-          style: const TextStyle(color: Colors.white70, fontSize: 13),
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
             onPressed: () {
@@ -308,8 +299,11 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
     final filtered = _filteredDevices;
 
     return Dialog(
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppTheme.border),
+      ),
       insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760, maxHeight: 660),
@@ -330,7 +324,7 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                     child: Icon(Icons.devices, color: Theme.of(context).colorScheme.primary, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -339,12 +333,12 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: AppTheme.textPrimary,
                           ),
                         ),
                         Text(
                           'Global device identity and classification database shared across the Network Suite.',
-                          style: TextStyle(fontSize: 11, color: Colors.white54),
+                          style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
@@ -353,7 +347,7 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                     icon: const Icon(Icons.add, size: 16),
                     label: const Text('Add Device', style: TextStyle(fontSize: 12)),
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
+                      backgroundColor: AppTheme.success,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -379,8 +373,8 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                   onChanged: (val) => setState(() => _searchQuery = val.trim()),
                   decoration: InputDecoration(
                     hintText: 'Search devices by name, MAC, vendor, or notes...',
-                    hintStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-                    prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white54),
+                    hintStyle: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    prefixIcon: Icon(Icons.search, size: 16, color: AppTheme.textSecondary),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, size: 14),
@@ -391,15 +385,19 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                           )
                         : null,
                     filled: true,
-                    fillColor: const Color(0xFF252526),
+                    fillColor: AppTheme.surfaceHigh,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF3E3E42)),
+                      borderSide: BorderSide(color: AppTheme.inputBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF3E3E42)),
+                      borderSide: BorderSide(color: AppTheme.inputBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: AppTheme.accent, width: 1.5),
                     ),
                   ),
                 ),
@@ -415,13 +413,13 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.devices_other, size: 44, color: Colors.grey.shade600),
+                                Icon(Icons.devices_other, size: 44, color: AppTheme.textMuted),
                                 const SizedBox(height: 10),
                                 Text(
                                   _searchQuery.isNotEmpty
                                       ? 'No matching devices found.'
                                       : 'No devices in the shared library yet.',
-                                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                                 ),
                               ],
                             ),
@@ -434,9 +432,9 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                               return Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF252526),
+                                  color: AppTheme.surfaceHigh,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFF3E3E42)),
+                                  border: Border.all(color: AppTheme.inputBorder),
                                 ),
                                 child: Row(
                                   children: [
@@ -459,10 +457,10 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                                               Flexible(
                                                 child: Text(
                                                   dev.name,
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 13,
-                                                    color: Colors.white,
+                                                    color: AppTheme.textPrimary,
                                                   ),
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
@@ -471,14 +469,14 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                                                  color: AppTheme.success.withValues(alpha: 0.2),
                                                   borderRadius: BorderRadius.circular(4),
                                                 ),
                                                 child: Text(
                                                   dev.category.label,
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontSize: 10,
-                                                    color: Color(0xFF10B981),
+                                                    color: AppTheme.success,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
@@ -488,10 +486,10 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                                           const SizedBox(height: 2),
                                           Text(
                                             '${dev.macAddress} • ${dev.vendor ?? "Unknown Vendor"}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               fontFamily: 'monospace',
-                                              color: Colors.grey,
+                                              color: AppTheme.textSecondary,
                                             ),
                                           ),
                                           if (dev.notes != null && dev.notes!.trim().isNotEmpty) ...[
@@ -501,7 +499,7 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontStyle: FontStyle.italic,
-                                                color: Colors.grey.shade400,
+                                                color: AppTheme.textSecondary,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -516,7 +514,7 @@ class _DeviceLibraryDialogState extends State<DeviceLibraryDialog> {
                                       onPressed: () => _showEditDeviceDialog(existing: dev),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.white54),
+                                      icon: Icon(Icons.delete_outline, size: 18, color: AppTheme.textSecondary),
                                       tooltip: 'Delete Device',
                                       onPressed: () => _confirmDeleteDevice(dev),
                                     ),

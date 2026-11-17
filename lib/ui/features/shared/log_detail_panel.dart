@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import '../../../domain/models/service_log_record.dart';
+import '../../theme/app_theme.dart';
 
 class LogDetailPanel extends StatefulWidget {
   final ServiceLogRecord record;
@@ -73,7 +74,9 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: AppTheme.isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.black.withValues(alpha: 0.12),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
@@ -116,7 +119,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
                     decoration: BoxDecoration(
                       color: _isDragging || _isHoveringHandle
                           ? Theme.of(context).colorScheme.primary
-                          : Colors.grey.shade600,
+                          : AppTheme.textMuted,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -144,7 +147,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
                 const SizedBox(width: 8),
                 Text(
                   '(${_currentHeight.round()}px)',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                 ),
                 const Spacer(),
                 // Maximize / Restore button
@@ -197,19 +200,25 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
                 children: [
                   Row(
                     children: [
-                      _badge('Service: ${record.serviceName}', Colors.blueGrey),
+                      _badge(
+                        'Service: ${record.serviceName}',
+                        AppTheme.isDark ? Colors.blueGrey.shade200 : Colors.blueGrey.shade700,
+                      ),
                       const SizedBox(width: 8),
                       _badge('Severity: ${record.severity.name.toUpperCase()}', _severityColor(record.severity)),
                       const SizedBox(width: 8),
                       if (record.clientAddress != null)
-                        _badge('Client: ${record.clientAddress}', Colors.indigo),
+                        _badge(
+                          'Client: ${record.clientAddress}',
+                          AppTheme.isDark ? Colors.indigo.shade200 : Colors.indigo.shade700,
+                        ),
                       const Spacer(),
                       Text(
                         record.timestamp.toIso8601String(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'monospace',
-                          color: Colors.grey,
+                          color: AppTheme.textSecondary,
                         ),
                       ),
                     ],
@@ -266,13 +275,13 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
   Color _severityColor(LogSeverity severity) {
     switch (severity) {
       case LogSeverity.error:
-        return Colors.red;
+        return AppTheme.error;
       case LogSeverity.warning:
-        return Colors.orange;
+        return AppTheme.warning;
       case LogSeverity.success:
-        return Colors.green;
+        return AppTheme.success;
       case LogSeverity.info:
-        return Colors.blue;
+        return AppTheme.info;
     }
   }
 }

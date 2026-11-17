@@ -19,6 +19,7 @@ import '../services/wol/wol_storage_service.dart';
 
 class NetworkServicesRepository {
   final NetworkInterfaceService _interfaceService = NetworkInterfaceService();
+  final Future<List<NetworkInterfaceInfo>> Function()? _interfacesProvider;
   final DnsServerService _dnsService = DnsServerService();
   final NtpServerService _ntpService = NtpServerService();
   late DhcpServerService _dhcpService;
@@ -45,6 +46,7 @@ class NetworkServicesRepository {
     DhcpConfig? initialConfig,
     WolStorageService? customStorage,
     SettingsStorageService? customSettingsStorage,
+    this._interfacesProvider,
   })  : _wolStorage = customStorage ?? WolStorageService(),
         _settingsStorage = customSettingsStorage ??
             SettingsStorageService(
@@ -106,7 +108,8 @@ class NetworkServicesRepository {
   Future<void> saveSettings(AppPersistedSettings settings) => _settingsStorage.saveSettings(settings);
 
   // Interfaces & Privileges
-  Future<List<NetworkInterfaceInfo>> getInterfaces() => _interfaceService.getAvailableInterfaces();
+  Future<List<NetworkInterfaceInfo>> getInterfaces() =>
+      _interfacesProvider?.call() ?? _interfaceService.getAvailableInterfaces();
   Future<bool> checkPrivileges() => _interfaceService.checkHasElevatedPrivileges();
 
   // DNS Operations
@@ -132,8 +135,10 @@ class NetworkServicesRepository {
       _dhcpService.start(port: port, bindAddress: bindAddress, serverIp: serverIp);
   Future<void> stopDhcp() => _dhcpService.stop();
   void updateDhcpConfig(DhcpConfig config) => _dhcpService.updateConfig(config);
-  void restoreDhcpLeases(List<DhcpLease> leases) => _dhcpService.restoreLeases(leases);
-  void clearDhcpLeases() => _dhcpService.clearLeases();
+  void restoreDhcpLeases(List<DhcpLease> leases, {bool silent = false}) =>
+      _dhcpService.restoreLeases(leases, silent: silent);
+  void clearDhcpLeases({bool silent = false}) =>
+      _dhcpService.clearLeases(silent: silent);
   void addStaticReservation(DhcpStaticReservation reservation) {
     final normMac = SharedDevice.normalizeMac(reservation.macAddress);
     final updatedList = List<DhcpStaticReservation>.from(_dhcpService.config.staticReservations)
@@ -149,6 +154,15 @@ class NetworkServicesRepository {
   }
 
   // Wake-on-LAN Operations
+  void setWolDevicesInMemory(List<WolDevice> devices) {
+    _wolDevices
+      ..clear()
+      ..addAll(devices);
+    if (!_wolDevicesController.isClosed) {
+      _wolDevicesController.add(List.unmodifiable(_wolDevices));
+    }
+  }
+
   Future<void> loadWolDevices() async {
     final devices = await _wolStorage.loadDevices();
     _wolDevices.clear();
@@ -314,9 +328,24 @@ class NetworkServicesRepository {
     );
   }
 
+  void setLogsImmediate(List<ServiceLogRecord> records) {
+    _logBatchTimer?.cancel();
+    _hasPendingLogUpdate = false;
+    _logs
+      ..clear()
+      ..addAll(records);
+    if (!_logsController.isClosed) {
+      _logsController.add(List.unmodifiable(_logs));
+    }
+  }
+
   void clearLogs() {
+    _logBatchTimer?.cancel();
+    _hasPendingLogUpdate = false;
     _logs.clear();
-    _logsController.add([]);
+    if (!_logsController.isClosed) {
+      _logsController.add([]);
+    }
   }
 
   void dispose() {

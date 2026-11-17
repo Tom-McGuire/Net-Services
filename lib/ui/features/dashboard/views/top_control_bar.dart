@@ -1,11 +1,21 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:net_services/domain/models/network_interface_info.dart';
 import 'package:provider/provider.dart';
+import '../../../theme/app_theme.dart';
 import '../../shared/device_library_dialog.dart';
 import '../view_models/network_services_view_model.dart';
 
 class TopControlBar extends StatelessWidget {
-  const TopControlBar({super.key});
+  final GlobalKey? zone2Key;
+  final GlobalKey? zone3Key;
+  final GlobalKey? exitDemoKey;
+
+  const TopControlBar({
+    super.key,
+    this.zone2Key,
+    this.zone3Key,
+    this.exitDemoKey,
+  });
 
   Future<void> _handleStartAll(BuildContext context, NetworkServicesViewModel vm) async {
     final iface = vm.selectedInterface?.name ?? 'Default';
@@ -14,11 +24,11 @@ class TopControlBar extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.amber),
-            SizedBox(width: 8),
-            Text('Start All Services Confirmation'),
+            Icon(Icons.warning_amber_rounded, color: AppTheme.warning),
+            const SizedBox(width: 8),
+            const Text('Start All Services Confirmation'),
           ],
         ),
         content: Text(
@@ -33,7 +43,10 @@ class TopControlBar extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade800),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.warning,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Confirm & Start All'),
           ),
@@ -51,13 +64,16 @@ class TopControlBar extends StatelessWidget {
     final vm = context.watch<NetworkServicesViewModel>();
     final isAnyRunning = vm.isAnyServiceRunning;
     final hasElevated = vm.hasElevatedPrivileges;
+    final exportEnabled = vm.filteredLogs.isNotEmpty;
+    final exportForeground =
+        exportEnabled ? AppTheme.textSecondary : AppTheme.textMuted;
 
     return Container(
       height: 52,
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
         border: Border(
-          bottom: BorderSide(color: Color(0xFF2C2C2C), width: 1),
+          bottom: BorderSide(color: AppTheme.border, width: 1),
         ),
       ),
       child: LayoutBuilder(
@@ -100,7 +116,7 @@ class TopControlBar extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  const Column(
+                  Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -110,101 +126,113 @@ class TopControlBar extends StatelessWidget {
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.8,
-                          color: Colors.white,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                       Text(
                         'DHCP • DNS • NTP • WOL',
-                        style: TextStyle(fontSize: 10, color: Colors.white54),
+                        style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
                   const SizedBox(width: 14),
 
                   // ==================== ZONE 2: INTERFACE & TARGET ====================
-                  Container(
-                    height: 32,
-                    width: 175,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF252526),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF3E3E42)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<NetworkInterfaceInfo>(
-                        value: vm.selectedInterface,
-                        isDense: true,
-                        dropdownColor: const Color(0xFF252526),
-                        style: const TextStyle(fontSize: 11, color: Colors.white, fontFamily: 'monospace'),
-                        items: vm.interfaces.map((iface) {
-                          return DropdownMenuItem<NetworkInterfaceInfo>(
-                            value: iface,
-                            child: Text(
-                              '${iface.name} - ${iface.ip} (/${iface.prefixLength})',
-                              overflow: TextOverflow.ellipsis,
+                  Row(
+                    key: zone2Key,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        height: 32,
+                        width: 175,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceHigh,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppTheme.inputBorder),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<NetworkInterfaceInfo>(
+                            value: vm.selectedInterface,
+                            isDense: true,
+                            isExpanded: true,
+                            dropdownColor: AppTheme.surfaceHigh,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textPrimary,
+                              fontFamily: 'monospace',
                             ),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            vm.selectInterface(val);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, size: 16),
-                    tooltip: 'Refresh Interfaces',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () => vm.refreshInterfaces(),
-                  ),
-                  const SizedBox(width: 6),
-                  Tooltip(
-                    message: hasElevated ? 'Elevated / Root Privileges' : 'Standard User (sudo needed for ports < 1024)',
-                    child: Container(
-                      height: 28,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: hasElevated
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.orange.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: hasElevated
-                              ? Colors.green.withValues(alpha: 0.4)
-                              : Colors.orange.withValues(alpha: 0.4),
+                            items: vm.interfaces.map((iface) {
+                              return DropdownMenuItem<NetworkInterfaceInfo>(
+                                value: iface,
+                                child: Text(
+                                  '${iface.name} - ${iface.ip} (/${iface.prefixLength})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                vm.selectInterface(val);
+                              }
+                            },
+                          ),
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            hasElevated ? Icons.admin_panel_settings : Icons.lock_outline,
-                            size: 13,
-                            color: hasElevated ? Colors.green : Colors.orange,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            hasElevated ? 'Root' : 'User',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: hasElevated ? Colors.green : Colors.orange,
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 16),
+                        tooltip: 'Refresh Interfaces',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        onPressed: () => vm.refreshInterfaces(),
+                      ),
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: hasElevated ? 'Elevated / Root Privileges' : 'Standard User (sudo needed for ports < 1024)',
+                        child: Container(
+                          height: 28,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: hasElevated
+                                ? AppTheme.success.withValues(alpha: 0.15)
+                                : AppTheme.warning.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: hasElevated
+                                  ? AppTheme.success.withValues(alpha: 0.4)
+                                  : AppTheme.warning.withValues(alpha: 0.4),
                             ),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                hasElevated ? Icons.admin_panel_settings : Icons.lock_outline,
+                                size: 13,
+                                color: hasElevated ? AppTheme.success : AppTheme.warning,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                hasElevated ? 'Root' : 'User',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: hasElevated ? AppTheme.success : AppTheme.warning,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                   const SizedBox(width: 12),
 
                   // ==================== ZONE 3: PRIMARY ACTIONS ====================
                   FilledButton.icon(
+                    key: zone3Key,
                     onPressed: () {
                       if (isAnyRunning) {
                         vm.stopAll();
@@ -214,8 +242,8 @@ class TopControlBar extends StatelessWidget {
                     },
                     style: FilledButton.styleFrom(
                       backgroundColor: isAnyRunning
-                          ? const Color(0xFFEF4444) // Active Red
-                          : const Color(0xFF10B981), // Idle Emerald Green (from ARP Scout)
+                          ? AppTheme.error
+                          : AppTheme.success,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -243,10 +271,31 @@ class TopControlBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
-                    onPressed: isAnyRunning ? null : () => vm.loadDemoData(),
-                    icon: const Icon(Icons.play_circle_outline, size: 15),
-                    label: const Text('Load Demo', style: TextStyle(fontSize: 11)),
+                    key: exitDemoKey,
+                    onPressed: vm.isDemoMode
+                        ? () => vm.endDemoWalkthrough()
+                        : (isAnyRunning ? null : () => vm.startDemoWalkthrough()),
+                    icon: Icon(
+                      vm.isDemoMode
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      size: 15,
+                      color: vm.isDemoMode ? AppTheme.warning : null,
+                    ),
+                    label: Text(
+                      vm.isDemoMode ? 'Exit Demo' : 'Load Demo',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: vm.isDemoMode ? AppTheme.warning : null,
+                      ),
+                    ),
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: vm.isDemoMode ? AppTheme.warning : null,
+                      side: vm.isDemoMode
+                          ? BorderSide(
+                              color: AppTheme.warning.withValues(alpha: 0.7),
+                            )
+                          : null,
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       visualDensity: VisualDensity.compact,
@@ -268,7 +317,7 @@ class TopControlBar extends StatelessWidget {
                   const SizedBox(width: 8),
                   PopupMenuButton<String>(
                     tooltip: 'Export',
-                    enabled: vm.filteredLogs.isNotEmpty,
+                    enabled: exportEnabled,
                     onSelected: (val) async {
                       if (val == 'csv') {
                         final path = await vm.exportCsv();
@@ -312,15 +361,17 @@ class TopControlBar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFF2C2C2C)),
+                        border: Border.all(
+                          color: exportEnabled ? AppTheme.inputBorder : AppTheme.border,
+                        ),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.download, size: 15, color: Colors.white70),
-                          SizedBox(width: 6),
-                          Text('Export', style: TextStyle(fontSize: 11, color: Colors.white70)),
-                          Icon(Icons.arrow_drop_down, size: 14, color: Colors.white70),
+                          Icon(Icons.download, size: 15, color: exportForeground),
+                          const SizedBox(width: 6),
+                          Text('Export', style: TextStyle(fontSize: 11, color: exportForeground)),
+                          Icon(Icons.arrow_drop_down, size: 14, color: exportForeground),
                         ],
                       ),
                     ),
@@ -346,7 +397,10 @@ class TopControlBar extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
               vm.clearLogs();
               Navigator.of(ctx).pop();

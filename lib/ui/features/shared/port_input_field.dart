@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import '../../theme/app_theme.dart';
 
 class PortInputField extends StatelessWidget {
   final TextEditingController controller;
@@ -19,7 +20,7 @@ class PortInputField extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('Port:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        Text('Port:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
         const SizedBox(width: 6),
         SizedBox(
           width: 75,

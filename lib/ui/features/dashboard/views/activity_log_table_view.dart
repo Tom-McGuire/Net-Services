@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:net_services/domain/models/service_log_record.dart';
 import 'package:provider/provider.dart';
+import '../../../theme/app_theme.dart';
 import '../view_models/network_services_view_model.dart';
 
 class ActivityLogTableView extends StatelessWidget {
@@ -21,7 +22,7 @@ class ActivityLogTableView extends StatelessWidget {
           child: Row(
             children: [
               // Service Filter Segmented Buttons / Chips
-              const Text('Filter:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('Filter:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
               const SizedBox(width: 8),
               _filterChip(context, vm, 'ALL', 'All Services'),
               const SizedBox(width: 6),
@@ -62,10 +63,10 @@ class ActivityLogTableView extends StatelessWidget {
         // Log Table
         Expanded(
           child: logs.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'No matching network activity recorded yet.',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                   ),
                 )
               : ListView.separated(
@@ -89,10 +90,10 @@ class ActivityLogTableView extends StatelessWidget {
                               width: 85,
                               child: Text(
                                 DateFormat('HH:mm:ss.SSS').format(log.timestamp),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'monospace',
-                                  color: Colors.grey,
+                                  color: AppTheme.textSecondary,
                                 ),
                               ),
                             ),
@@ -138,10 +139,10 @@ class ActivityLogTableView extends StatelessWidget {
                               width: 140,
                               child: Text(
                                 log.clientAddress ?? '-',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'monospace',
-                                  color: Colors.white70,
+                                  color: AppTheme.textSecondary,
                                 ),
                               ),
                             ),
@@ -182,30 +183,31 @@ class ActivityLogTableView extends StatelessWidget {
   }
 
   Color _serviceColor(ServiceType type) {
+    final dark = AppTheme.isDark;
     switch (type) {
       case ServiceType.dhcp:
-        return Colors.amber;
+        return dark ? Colors.amber : AppTheme.warning;
       case ServiceType.ntp:
-        return Colors.tealAccent;
+        return dark ? Colors.tealAccent : const Color(0xFF0D9488);
       case ServiceType.dns:
-        return Colors.lightBlueAccent;
+        return dark ? Colors.lightBlueAccent : AppTheme.accent;
       case ServiceType.system:
-        return Colors.purpleAccent;
+        return dark ? Colors.purpleAccent : const Color(0xFF7C3AED);
       case ServiceType.wol:
-        return Colors.cyanAccent;
+        return dark ? Colors.cyanAccent : const Color(0xFF0891B2);
     }
   }
 
   Color _severityColor(LogSeverity severity) {
     switch (severity) {
       case LogSeverity.error:
-        return Colors.red;
+        return AppTheme.error;
       case LogSeverity.warning:
-        return Colors.orange;
+        return AppTheme.warning;
       case LogSeverity.success:
-        return Colors.green;
+        return AppTheme.success;
       case LogSeverity.info:
-        return Colors.white70;
+        return AppTheme.textSecondary;
     }
   }
 }

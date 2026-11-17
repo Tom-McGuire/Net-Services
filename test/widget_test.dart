@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:net_services/data/repositories/network_services_repository.dart';
 import 'package:net_services/data/services/wol/wol_storage_service.dart';
@@ -154,16 +154,7 @@ void main() {
     await tester.pumpWidget(NetworkServicesApp(repository: repo));
     await tester.pumpAndSettle();
 
-    // Tap Load Demo
-    await tester.tap(find.text('Load Demo'));
-    await tester.pumpAndSettle();
-
-    // Verify demo DNS records, DHCP leases, and WOL devices are populated
-    expect(repo.dnsRecords.any((r) => r.domain == 'router.lab'), isTrue);
-    expect(repo.dhcpLeases.any((l) => l.hostname == 'MacBook-Pro'), isTrue);
-    expect(repo.wolDevices.any((d) => d.name == 'Studio Workstation'), isTrue);
-
-    // Tap Device Library
+    // Tap Device Library while tour overlay is inactive
     await tester.tap(find.text('Device Library'));
     await tester.pumpAndSettle();
 
@@ -175,5 +166,27 @@ void main() {
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(DeviceLibraryDialog), findsNothing);
+
+    // Tap Load Demo to populate data and start guided tour
+    await tester.tap(find.text('Load Demo'));
+    await tester.pumpAndSettle();
+
+    // Verify demo DNS records, DHCP leases, WOL devices, logs, and tour overlay
+    expect(repo.dnsRecords.any((r) => r.domain == 'router.lab'), isTrue);
+    expect(repo.dhcpLeases.any((l) => l.hostname == 'MacBook-Pro'), isTrue);
+    expect(repo.wolDevices.any((d) => d.name == 'Studio Workstation'), isTrue);
+    expect(repo.logs, isNotEmpty);
+    expect(find.text('DEMO WALKTHROUGH • STEP 1 OF 5'), findsOneWidget);
+    expect(find.text('End Demo'), findsOneWidget);
+
+    // Tap End Demo and confirm all demo data auto-clears
+    await tester.tap(find.text('End Demo'));
+    await tester.pumpAndSettle();
+
+    expect(repo.dnsRecords, isEmpty);
+    expect(repo.dhcpLeases, isEmpty);
+    expect(repo.wolDevices, isEmpty);
+    expect(repo.logs, isEmpty);
+    expect(find.text('Load Demo'), findsOneWidget);
   });
 }

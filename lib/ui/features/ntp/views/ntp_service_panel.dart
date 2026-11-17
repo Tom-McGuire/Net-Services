@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../../theme/app_theme.dart';
 import '../../dashboard/view_models/network_services_view_model.dart';
 import '../../shared/port_input_field.dart';
 import '../../shared/service_status_badge.dart';
@@ -77,7 +78,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
               FilledButton.icon(
                 onPressed: () => vm.toggleNtp(),
                 style: FilledButton.styleFrom(
-                  backgroundColor: isRunning ? Colors.red.shade700 : Colors.green.shade700,
+                  backgroundColor: isRunning ? AppTheme.error : AppTheme.success,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
@@ -106,7 +107,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Local System Time', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text('Local System Time', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                           const SizedBox(height: 4),
                           Text(
                             DateFormat('HH:mm:ss').format(_currentTime),
@@ -119,7 +120,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
                           ),
                           Text(
                             DateFormat('EEEE, MMMM d, y').format(_currentTime),
-                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                           ),
                         ],
                       ),
@@ -128,20 +129,20 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('UTC Clock Reference', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text('UTC Clock Reference', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                           const SizedBox(height: 4),
                           Text(
                             DateFormat('HH:mm:ss').format(utcTime),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 22,
                               fontWeight: FontWeight.w600,
-                              color: Colors.blueAccent,
+                              color: AppTheme.info,
                             ),
                           ),
                           Text(
                             'Timezone: ${_currentTime.timeZoneName} (UTC${_currentTime.timeZoneOffset.isNegative ? "" : "+"}${_currentTime.timeZoneOffset.inHours})',
-                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -215,10 +216,10 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
         // NTP Sync List
         Expanded(
           child: ntpLogs.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'No client time synchronization requests received yet.',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                   ),
                 )
               : ListView.separated(
@@ -229,7 +230,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
                     final log = ntpLogs[idx];
                     return ListTile(
                       dense: true,
-                      leading: const Icon(Icons.sync, size: 20, color: Colors.blueAccent),
+                      leading: Icon(Icons.sync, size: 20, color: AppTheme.info),
                       title: Text(
                         log.summary,
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
@@ -253,7 +254,7 @@ class _NtpServicePanelState extends State<NtpServicePanel> {
       children: [
         Text(
           '$label: ',
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
+          style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
         ),
         Text(
           value,

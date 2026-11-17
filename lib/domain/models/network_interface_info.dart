@@ -54,5 +54,20 @@ class NetworkInterfaceInfo {
   }
 
   @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetworkInterfaceInfo &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          ip == other.ip &&
+          subnetMask == other.subnetMask &&
+          prefixLength == other.prefixLength &&
+          defaultGateway == other.defaultGateway;
+
+  @override
+  int get hashCode =>
+      Object.hash(name, ip, subnetMask, prefixLength, defaultGateway);
+
+  @override
   String toString() => '$name ($ip/$prefixLength, Gateway: ${defaultGateway ?? "None"})';
 }

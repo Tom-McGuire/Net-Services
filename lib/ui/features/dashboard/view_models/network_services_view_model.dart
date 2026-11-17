@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:network_suite_shared/network_suite_shared.dart';
 import '../../../../data/repositories/network_services_repository.dart';
 import '../../../../data/services/device/mac_address_helper.dart';
@@ -10,6 +10,7 @@ import '../../../../domain/models/dhcp_config.dart';
 import '../../../../domain/models/dhcp_lease.dart';
 import '../../../../domain/models/dhcp_static_reservation.dart';
 import '../../../../domain/models/dns_record.dart';
+import '../../../../domain/models/launch_adapter_config.dart';
 import '../../../../domain/models/network_interface_info.dart';
 import '../../../../domain/models/service_log_record.dart';
 import '../../../../domain/models/service_status.dart';
@@ -17,11 +18,15 @@ import '../../../../domain/models/wol_device.dart';
 
 class NetworkServicesViewModel extends ChangeNotifier {
   final NetworkServicesRepository _repository;
+  final LaunchAdapterConfig? initialAdapterConfig;
 
   List<NetworkInterfaceInfo> _interfaces = [];
   NetworkInterfaceInfo? _selectedInterface;
   bool _hasElevatedPrivileges = false;
   bool _disposed = false;
+  bool _hasAppliedInitialAdapterOverride = false;
+  bool _hasPersistedDhcpConfig = false;
+  bool _isDemoMode = false;
 
   int _dnsPort = 53;
   int _ntpPort = 123;
@@ -45,8 +50,10 @@ class NetworkServicesViewModel extends ChangeNotifier {
   StreamSubscription? _wolSub;
   StreamSubscription? _sharedDbSub;
 
-  NetworkServicesViewModel({NetworkServicesRepository? repository})
-      : _repository = repository ?? NetworkServicesRepository() {
+  NetworkServicesViewModel({
+    NetworkServicesRepository? repository,
+    this.initialAdapterConfig,
+  }) : _repository = repository ?? NetworkServicesRepository() {
     _dhcpConfig = _repository.dhcpConfig;
     _init();
   }
@@ -84,6 +91,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
 
   bool get isAnyServiceRunning =>
       dnsStatus.isRunning || ntpStatus.isRunning || dhcpStatus.isRunning;
+  bool get isDemoMode => _isDemoMode;
 
   String? get activeErrorMessage {
     if (_dhcpValidationError != null) return 'DHCP Config: $_dhcpValidationError';
@@ -137,6 +145,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
       if (persisted.dhcpConfig != null) {
         _dhcpConfig = persisted.dhcpConfig!;
         _repository.updateDhcpConfig(_dhcpConfig);
+        _hasPersistedDhcpConfig = true;
       }
       if (persisted.activeLeases != null && persisted.activeLeases!.isNotEmpty) {
         _repository.restoreDhcpLeases(persisted.activeLeases!);
@@ -144,7 +153,12 @@ class NetworkServicesViewModel extends ChangeNotifier {
     }
 
     if (_interfaces.isNotEmpty) {
-      if (persisted?.selectedInterfaceName != null) {
+      final matchedOverride = _consumeInitialAdapterOverride();
+      if (matchedOverride != null) {
+        _selectedInterface = matchedOverride;
+      } else if (_selectedInterface != null) {
+        _selectedInterface = _resolvePreservedInterface(_selectedInterface!);
+      } else if (persisted?.selectedInterfaceName != null) {
         _selectedInterface = _interfaces.firstWhere(
           (i) => i.name == persisted!.selectedInterfaceName,
           orElse: () => _interfaces.first,
@@ -166,7 +180,9 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _ntpSub = _repository.ntpStatusStream.listen((_) => notifyListeners());
     _dhcpSub = _repository.dhcpStatusStream.listen((_) => notifyListeners());
     _leaseSub = _repository.dhcpLeasesStream.listen((_) {
-      _persistSettings();
+      if (!_isDemoMode) {
+        _persistSettings();
+      }
       notifyListeners();
     });
     _wolSub = _repository.wolDevicesStream.listen((_) => notifyListeners());
@@ -183,6 +199,7 @@ class NetworkServicesViewModel extends ChangeNotifier {
   }
 
   void _persistSettings() {
+    if (_isDemoMode) return;
     _repository.saveSettings(
       AppPersistedSettings(
         dhcpConfig: _dhcpConfig,
@@ -215,7 +232,26 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _repository.updateDhcpConfig(_dhcpConfig);
   }
 
+  NetworkInterfaceInfo? _consumeInitialAdapterOverride() {
+    if (_hasAppliedInitialAdapterOverride) return null;
+    _hasAppliedInitialAdapterOverride = true;
+    return initialAdapterConfig?.matchInterface(_interfaces);
+  }
+
+  NetworkInterfaceInfo _resolvePreservedInterface(
+    NetworkInterfaceInfo previous,
+  ) {
+    return _interfaces.firstWhere(
+      (i) => i.name == previous.name && i.ip == previous.ip,
+      orElse: () => _interfaces.firstWhere(
+        (i) => i.name == previous.name,
+        orElse: () => _interfaces.first,
+      ),
+    );
+  }
+
   void selectInterface(NetworkInterfaceInfo iface) {
+    _hasAppliedInitialAdapterOverride = true;
     _selectedInterface = iface;
     if (!dhcpStatus.isRunning) {
       _applyInterfaceToDhcpDefaults(iface);
@@ -228,25 +264,39 @@ class NetworkServicesViewModel extends ChangeNotifier {
     _interfaces = await _repository.getInterfaces();
     if (_disposed) return;
     if (_interfaces.isNotEmpty) {
-      if (_selectedInterface != null) {
-        _selectedInterface = _interfaces.firstWhere(
-          (i) => i.name == _selectedInterface!.name,
-          orElse: () => _interfaces.first,
-        );
+      final wasUnselected = _selectedInterface == null;
+      final matchedOverride = _consumeInitialAdapterOverride();
+      if (matchedOverride != null) {
+        _selectedInterface = matchedOverride;
+        if (!dhcpStatus.isRunning && !_hasPersistedDhcpConfig) {
+          _applyInterfaceToDhcpDefaults(_selectedInterface!);
+        }
+      } else if (_selectedInterface != null) {
+        _selectedInterface = _resolvePreservedInterface(_selectedInterface!);
       } else {
         _selectedInterface = _interfaces.first;
+        if (wasUnselected && !dhcpStatus.isRunning && !_hasPersistedDhcpConfig) {
+          _applyInterfaceToDhcpDefaults(_selectedInterface!);
+        }
       }
     }
     notifyListeners();
   }
 
-  Future<void> loadDemoData() async {
-    // 1. Add sample DNS records
-    addDnsRecord(const DnsRecord(domain: 'router.lab', ip: '192.168.1.1'));
-    addDnsRecord(const DnsRecord(domain: 'nas.lab', ip: '192.168.1.50'));
-    addDnsRecord(const DnsRecord(domain: '*.lab', ip: '192.168.1.100'));
+  Future<void> startDemoWalkthrough() async {
+    _isDemoMode = true;
+    _selectedLog = null;
+    _logFilter = 'ALL';
+    _searchQuery = '';
 
-    // 2. Add sample DHCP leases
+    // 1. Sample DNS records (strictly in-memory, no persistence)
+    _repository.setDnsRecords(const [
+      DnsRecord(domain: 'router.lab', ip: '192.168.1.1'),
+      DnsRecord(domain: 'nas.lab', ip: '192.168.1.50'),
+      DnsRecord(domain: '*.lab', ip: '192.168.1.100'),
+    ]);
+
+    // 2. Sample DHCP leases (strictly in-memory, no persistence)
     final now = DateTime.now();
     _repository.restoreDhcpLeases([
       DhcpLease(
@@ -273,24 +323,103 @@ class NetworkServicesViewModel extends ChangeNotifier {
         leaseDurationSeconds: 86400,
         friendlyName: 'Studio Workstation',
       ),
+    ], silent: true);
+
+    // 3. Sample WOL devices (strictly in-memory, no persistence or logs)
+    _repository.setWolDevicesInMemory(const [
+      WolDevice(
+        id: 'demo_1',
+        name: 'Studio Workstation',
+        macAddress: '3C:06:30:AA:BB:CC',
+        ipAddress: '192.168.1.105',
+        port: 9,
+      ),
+      WolDevice(
+        id: 'demo_2',
+        name: 'Backup Synology NAS',
+        macAddress: '00:11:32:44:55:66',
+        ipAddress: '192.168.1.50',
+        port: 9,
+      ),
     ]);
 
-    // 3. Add sample WOL devices
-    await addWolDevice(const WolDevice(
-      id: 'demo_1',
-      name: 'Studio Workstation',
-      macAddress: '3C:06:30:AA:BB:CC',
-      ipAddress: '192.168.1.105',
-      port: 9,
-    ));
-    await addWolDevice(const WolDevice(
-      id: 'demo_2',
-      name: 'Backup Synology NAS',
-      macAddress: '00:11:32:44:55:66',
-      ipAddress: '192.168.1.50',
-      port: 9,
-    ));
+    // 4. Sample protocol transaction logs across DHCP, DNS, NTP, and WOL
+    _repository.setLogsImmediate([
+      ServiceLogRecord(
+        id: 'demo_log_1',
+        timestamp: now.subtract(const Duration(seconds: 2)),
+        serviceType: ServiceType.dhcp,
+        severity: LogSeverity.success,
+        action: 'ACK',
+        summary:
+            'Assigned 192.168.1.105 to 3C:06:30:AA:BB:CC (Workstation-Win11)',
+        clientAddress: '192.168.1.105',
+        details: 'Message: DHCPACK\n'
+            'Client MAC: 3C:06:30:AA:BB:CC\n'
+            'Assigned IP: 192.168.1.105\n'
+            'Subnet Mask: 255.255.255.0\n'
+            'Gateway: 192.168.1.1\n'
+            'Lease Duration: 86400s (24h)',
+      ),
+      ServiceLogRecord(
+        id: 'demo_log_2',
+        timestamp: now.subtract(const Duration(seconds: 5)),
+        serviceType: ServiceType.dns,
+        severity: LogSeverity.success,
+        action: 'RESOLVED',
+        summary: 'Resolved A query for router.lab -> 192.168.1.1',
+        clientAddress: '192.168.1.101',
+        details: 'Query: router.lab (IN A)\n'
+            'Client: 192.168.1.101\n'
+            'Answer: 192.168.1.1 (TTL 300s)\n'
+            'Source: Local DNS Record',
+      ),
+      ServiceLogRecord(
+        id: 'demo_log_3',
+        timestamp: now.subtract(const Duration(seconds: 9)),
+        serviceType: ServiceType.ntp,
+        severity: LogSeverity.info,
+        action: 'TIME_SYNC',
+        summary: 'Served Stratum 2 NTP time sync reply to 192.168.1.102',
+        clientAddress: '192.168.1.102',
+        details: 'Client: 192.168.1.102\n'
+            'Protocol: SNTP / NTPv4 (Mode 4 Server)\n'
+            'Stratum: 2\n'
+            'Reference Clock: Local System UTC',
+      ),
+      ServiceLogRecord(
+        id: 'demo_log_4',
+        timestamp: now.subtract(const Duration(seconds: 14)),
+        serviceType: ServiceType.wol,
+        severity: LogSeverity.success,
+        action: 'MAGIC_PACKET',
+        summary:
+            'Sent Wake-on-LAN Magic Packet to "Studio Workstation" (3C:06:30:AA:BB:CC) on port 9',
+        clientAddress: '192.168.1.105',
+        details: 'Device: Studio Workstation\n'
+            'Target MAC: 3C:06:30:AA:BB:CC\n'
+            'Broadcast: 255.255.255.255:9\n'
+            'Payload: 102 bytes (6x0xFF + 16xMAC)',
+      ),
+    ]);
 
+    _invalidateLogCache();
+    notifyListeners();
+  }
+
+  Future<void> loadDemoData() => startDemoWalkthrough();
+
+  void endDemoWalkthrough() => clearAllLogsAndDemoData();
+
+  void clearAllLogsAndDemoData() {
+    _isDemoMode = false;
+    _repository.setDnsRecords(const []);
+    _repository.clearDhcpLeases(silent: true);
+    _repository.setWolDevicesInMemory(const []);
+    _repository.clearLogs();
+    _selectedLog = null;
+    _logFilter = 'ALL';
+    _searchQuery = '';
     _invalidateLogCache();
     notifyListeners();
   }
@@ -498,6 +627,10 @@ class NetworkServicesViewModel extends ChangeNotifier {
   }
 
   void clearLogs() {
+    if (_isDemoMode) {
+      clearAllLogsAndDemoData();
+      return;
+    }
     _repository.clearLogs();
     _selectedLog = null;
     _invalidateLogCache();

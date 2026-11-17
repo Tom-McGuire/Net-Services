@@ -1,11 +1,12 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:provider/provider.dart';
 import '../../../../data/services/device/mac_address_helper.dart';
 import '../../../../domain/models/wol_device.dart';
+import '../../../theme/app_theme.dart';
 import '../../dashboard/view_models/network_services_view_model.dart';
 
 class WakeOnLanPanel extends StatefulWidget {
@@ -37,19 +38,22 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
               children: [
                 Icon(
                   success ? Icons.check_circle : Icons.error_outline,
-                  color: success ? Colors.greenAccent : Colors.redAccent,
+                  color: success ? AppTheme.success : AppTheme.error,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  success
-                      ? 'Magic packet sent to "${device.name}" (${device.macAddress})'
-                      : 'Failed to send packet to "${device.name}"',
+                Expanded(
+                  child: Text(
+                    success
+                        ? 'Magic packet sent to "${device.name}" (${device.macAddress})'
+                        : 'Failed to send packet to "${device.name}"',
+                    style: TextStyle(color: AppTheme.textPrimary),
+                  ),
                 ),
               ],
             ),
             duration: const Duration(seconds: 3),
-            backgroundColor: const Color(0xFF2D2D30),
+            backgroundColor: AppTheme.surfaceElevated,
           ),
         );
       }
@@ -113,7 +117,10 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -166,7 +173,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                 ),
                 child: Text(
                   '${devices.length} ${devices.length == 1 ? 'Device' : 'Devices'}',
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                 ),
               ),
               const SizedBox(width: 16),
@@ -231,7 +238,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                   ? Center(
                       child: Text(
                         'No devices match "$query"',
-                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                       ),
                     )
                   : Padding(
@@ -261,19 +268,19 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.bolt_outlined, size: 64, color: Colors.grey.shade600),
+          Icon(Icons.bolt_outlined, size: 64, color: AppTheme.textMuted),
           const SizedBox(height: 16),
           const Text(
             'No Wake-on-LAN Devices Configured',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const SizedBox(
+          SizedBox(
             width: 480,
             child: Text(
               'Add local network devices to wake them remotely using standard Magic Packets. You can enter a MAC address manually or resolve it automatically from an active IP address.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ),
           const SizedBox(height: 20),
@@ -349,7 +356,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
                   onPressed: () => _showDeviceDialog(device),
                 ),
                 IconButton(
-                  icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade400),
+                  icon: Icon(Icons.delete_outline, size: 16, color: AppTheme.error),
                   tooltip: 'Delete Device',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _confirmDeleteDevice(device, vm),
@@ -361,15 +368,15 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
             // Device Details
             Row(
               children: [
-                const Text('MAC: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text('MAC: ', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                 Expanded(
                   child: SelectableText(
                     device.macAddress,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.lightBlueAccent,
+                      color: AppTheme.isDark ? Colors.lightBlueAccent : AppTheme.accent,
                     ),
                   ),
                 ),
@@ -390,11 +397,11 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
               const SizedBox(height: 2),
               Row(
                 children: [
-                  const Text('Vendor: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text('Vendor: ', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                   Expanded(
                     child: Text(
                       cleanVendor,
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -404,25 +411,25 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
             const SizedBox(height: 4),
             Row(
               children: [
-                const Text('IP: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text('IP: ', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                 Text(
                   device.ipAddress ?? 'None (Broadcast only)',
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
                 ),
                 const Spacer(),
-                const Text('Port: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text('Port: ', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                 Text('${device.port}', style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
               ],
             ),
             const SizedBox(height: 4),
             Row(
               children: [
-                const Text('Last Woken: ', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text('Last Woken: ', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                 Text(
                   lastWokenStr,
                   style: TextStyle(
                     fontSize: 11,
-                    color: device.lastWoken != null ? Colors.white70 : Colors.grey,
+                    color: device.lastWoken != null ? AppTheme.textSecondary : AppTheme.textMuted,
                   ),
                 ),
               ],
@@ -435,7 +442,7 @@ class _WakeOnLanPanelState extends State<WakeOnLanPanel> {
               child: FilledButton.icon(
                 onPressed: isWaking ? null : () => _handleWakeDevice(device, vm),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF0E639C),
+                  backgroundColor: AppTheme.isDark ? const Color(0xFF0E639C) : AppTheme.accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -638,9 +645,9 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Device Identification',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
                     ),
                     TextButton.icon(
                       onPressed: () {
@@ -711,9 +718,9 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Enter an IP of an online machine to automatically retrieve its MAC address via ARP.',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -759,7 +766,7 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                             Icon(
                               _resolveSuccess ? Icons.check_circle : Icons.warning_amber_rounded,
                               size: 14,
-                              color: _resolveSuccess ? Colors.green : Colors.amber,
+                              color: _resolveSuccess ? AppTheme.success : AppTheme.warning,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -767,7 +774,7 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                                 _resolveStatusMessage!,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: _resolveSuccess ? Colors.green : Colors.amber,
+                                  color: _resolveSuccess ? AppTheme.success : AppTheme.warning,
                                 ),
                               ),
                             ),
@@ -804,18 +811,18 @@ class _WolDeviceDialogState extends State<_WolDeviceDialog> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.12),
+                      color: AppTheme.info.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                      border: Border.all(color: AppTheme.info.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.verified, size: 16, color: Colors.blueAccent),
+                        Icon(Icons.verified, size: 16, color: AppTheme.info),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Known Suite Device: "${_matchedSharedDevice!.name}"${_matchedSharedDevice!.vendor != null ? " (${_matchedSharedDevice!.vendor})" : ""}',
-                            style: const TextStyle(fontSize: 12, color: Colors.lightBlueAccent, fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 12, color: AppTheme.info, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -925,11 +932,11 @@ class _SharedDevicePickerDialogState extends State<_SharedDevicePickerDialog> {
     }).toList();
 
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.devices, color: Colors.lightBlueAccent, size: 22),
-          SizedBox(width: 10),
-          Text('Import from Shared Devices'),
+          Icon(Icons.devices, color: AppTheme.info, size: 22),
+          const SizedBox(width: 10),
+          const Text('Import from Shared Devices'),
         ],
       ),
       content: SizedBox(
@@ -961,7 +968,7 @@ class _SharedDevicePickerDialogState extends State<_SharedDevicePickerDialog> {
                   ? Center(
                       child: Text(
                         'No matching shared devices found for "$query"',
-                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                       ),
                     )
                   : ListView.separated(
@@ -997,7 +1004,7 @@ class _SharedDevicePickerDialogState extends State<_SharedDevicePickerDialog> {
                                 ),
                                 child: Text(
                                   device.category.label,
-                                  style: const TextStyle(fontSize: 10, color: Colors.white70),
+                                  style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                                 ),
                               ),
                             ],
