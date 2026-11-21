@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:net_services/data/services/wol/wol_service.dart';
 import 'package:net_services/data/services/wol/wol_storage_service.dart';
 import 'package:net_services/domain/models/wol_device.dart';
@@ -92,6 +93,29 @@ void main() {
       final service = WolService();
       expect(await service.resolveMacFromIp('invalid-ip'), isNull);
       expect(await service.resolveMacFromIp('999.999.999.999'), isNull);
+    });
+
+    test('resolveMacFromIp resolves normalized MAC via ArpCacheParser', () async {
+      final parser = ArpCacheParser(
+        isLinux: true,
+        isWindows: false,
+        isMacOS: false,
+        processRunner: (_, _) async => ProcessResult(0, 0, '', ''),
+        fileReader: (path) async {
+          if (path == '/proc/net/arp') {
+            return '''
+IP address       HW type     Flags       HW address            Mask     Device
+192.168.1.50     0x1         0x2         aa:bb:cc:dd:ee:01     *        eth0
+192.168.1.60     0x1         0x0         00:00:00:00:00:00     *        eth0
+''';
+          }
+          return null;
+        },
+      );
+      final service = WolService(arpCacheParser: parser);
+
+      expect(await service.resolveMacFromIp('192.168.1.50'), equals('AA:BB:CC:DD:EE:01'));
+      expect(await service.resolveMacFromIp('192.168.1.60'), isNull);
     });
   });
 

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:net_services/data/repositories/network_services_repository.dart';
 import 'package:net_services/data/services/wol/wol_storage_service.dart';
 import 'package:net_services/domain/models/dhcp_static_reservation.dart';
@@ -13,6 +14,10 @@ NetworkServicesRepository _createIsolatedRepo() =>
     NetworkServicesRepository(customStorage: WolStorageService(inMemory: true));
 
 void main() {
+  setUp(() async {
+    await SharedDeviceDatabase.instance.init(dbPath: ':memory:');
+  });
+
   testWidgets('NetworkServicesApp smoke test renders TopControlBar and service tabs', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
